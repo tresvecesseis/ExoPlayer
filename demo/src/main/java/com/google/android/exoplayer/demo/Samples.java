@@ -210,6 +210,9 @@ import java.util.Locale;
   };
 
   public static final Sample[] HLS = new Sample[] {
+    new Sample("Demo Portugal",
+        "http://200.194.237.226:8182/live/fox1/playlist.m3u8?x1=test&x2=test&canal=FOX1&mac=cc:2d:8c:aa:02:c2&ipaddr=187.58.37.123",
+        Util.TYPE_HLS),
     new Sample("Apple master playlist",
         "https://devimages.apple.com.edgekey.net/streaming/examples/bipbop_4x3/"
         + "bipbop_4x3_variant.m3u8", Util.TYPE_HLS),
