@@ -347,7 +347,7 @@ public final class TsExtractor implements Extractor {
           // Read descriptors in PES packets containing private data.
           streamType = readPrivateDataStreamType(sectionData, esInfoLength);
         } else {
-          if (streamType == TS_STREAM_TYPE_MPA || streamType == TS_STREAM_TYPE_MPA_LSF) {
+          if ((streamType == TS_STREAM_TYPE_MPA || streamType == TS_STREAM_TYPE_MPA_LSF) && esInfoLength != 0) {
             descriptorScratch = new ParsableBitArray(new byte[esInfoLength]);
             sectionData.readBytes(descriptorScratch, esInfoLength);
           } else {
@@ -364,21 +364,25 @@ public final class TsExtractor implements Extractor {
         int type = -1;
         switch (streamType) {
           case TS_STREAM_TYPE_MPA:
-            type = descriptorScratch.readBits(8);
-            switch (type) {
-              case 0x0a:
-                language = readDescriptorAudio(descriptorScratch);
-                break;
+            if (esInfoLength > 0) {
+              type = descriptorScratch.readBits(8);
+              switch (type) {
+                case 0x0a:
+                  language = readDescriptorAudio(descriptorScratch);
+                  break;
+              }
             }
             pesPayloadReader = new MpegAudioReader(output.track(elementaryPid), language);
             pidToTypeMap.put(elementaryPid, TS_STREAM_TYPE_MPA);
             break;
           case TS_STREAM_TYPE_MPA_LSF:
-            type = descriptorScratch.readBits(8);
-            switch (type) {
-              case 0x0a:
-                language = readDescriptorAudio(descriptorScratch);
-                break;
+            if (esInfoLength > 0) {
+              type = descriptorScratch.readBits(8);
+              switch (type) {
+                case 0x0a:
+                  language = readDescriptorAudio(descriptorScratch);
+                  break;
+              }
             }
             pesPayloadReader = new MpegAudioReader(output.track(elementaryPid), language);
             pidToTypeMap.put(elementaryPid, TS_STREAM_TYPE_MPA_LSF);
