@@ -43,11 +43,15 @@ import com.google.android.exoplayer.upstream.BandwidthMeter;
 import com.google.android.exoplayer.upstream.DefaultBandwidthMeter;
 import com.google.android.exoplayer.util.DebugTextViewHelper;
 import com.google.android.exoplayer.util.PlayerControl;
+import com.google.android.exoplayer.text.DvbTextRenderer;
 
+import android.graphics.Bitmap;
 import android.media.MediaCodec.CryptoException;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 import android.view.Surface;
+import android.view.View;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -63,7 +67,7 @@ public class DemoPlayer implements ExoPlayer.Listener, ChunkSampleSource.EventLi
     HlsSampleSource.EventListener, ExtractorSampleSource.EventListener,
     SingleSampleSource.EventListener, DefaultBandwidthMeter.EventListener,
     MediaCodecVideoTrackRenderer.EventListener, MediaCodecAudioTrackRenderer.EventListener,
-    StreamingDrmSessionManager.EventListener, DashChunkSource.EventListener, TextRenderer,
+    StreamingDrmSessionManager.EventListener, DashChunkSource.EventListener, TextRenderer, DvbTextRenderer,
     MetadataRenderer<List<Id3Frame>>, DebugTextViewHelper.Provider {
 
   /**
@@ -141,6 +145,13 @@ public class DemoPlayer implements ExoPlayer.Listener, ChunkSampleSource.EventLi
   }
 
   /**
+   * A listener for receiving notifications of timed text.
+   */
+  public interface DvbTextListener {
+    void onDvbText(Bitmap bitmap);
+  }
+
+  /**
    * A listener for receiving ID3 metadata parsed from the media stream.
    */
   public interface Id3MetadataListener {
@@ -156,11 +167,12 @@ public class DemoPlayer implements ExoPlayer.Listener, ChunkSampleSource.EventLi
   public static final int TRACK_DISABLED = ExoPlayer.TRACK_DISABLED;
   public static final int TRACK_DEFAULT = ExoPlayer.TRACK_DEFAULT;
 
-  public static final int RENDERER_COUNT = 4;
+  public static final int RENDERER_COUNT = 5;
   public static final int TYPE_VIDEO = 0;
   public static final int TYPE_AUDIO = 1;
   public static final int TYPE_TEXT = 2;
   public static final int TYPE_METADATA = 3;
+  public static final int TYPE_DVBSUBS = 4;
 
   private static final int RENDERER_BUILDING_STATE_IDLE = 1;
   private static final int RENDERER_BUILDING_STATE_BUILDING = 2;
@@ -177,7 +189,9 @@ public class DemoPlayer implements ExoPlayer.Listener, ChunkSampleSource.EventLi
   private boolean lastReportedPlayWhenReady;
 
   private Surface surface;
+  private Bitmap dvbSubsBitmap;
   private TrackRenderer videoRenderer;
+  private TrackRenderer dvbSubsRenderer;
   private CodecCounters codecCounters;
   private Format videoFormat;
   private int videoTrackToRestore;
@@ -185,11 +199,14 @@ public class DemoPlayer implements ExoPlayer.Listener, ChunkSampleSource.EventLi
   private BandwidthMeter bandwidthMeter;
   private boolean backgrounded;
 
+  private DvbTextListener dvbTextListener;
   private CaptionListener captionListener;
   private Id3MetadataListener id3MetadataListener;
   private InternalErrorListener internalErrorListener;
   private InfoListener infoListener;
 
+  private boolean dvbSubsSelection;
+  private View dvbSubsView;
   public DemoPlayer(RendererBuilder rendererBuilder) {
     this.rendererBuilder = rendererBuilder;
     player = ExoPlayer.Factory.newInstance(RENDERER_COUNT, 1000, 5000);
@@ -201,6 +218,8 @@ public class DemoPlayer implements ExoPlayer.Listener, ChunkSampleSource.EventLi
     rendererBuildingState = RENDERER_BUILDING_STATE_IDLE;
     // Disable text initially.
     player.setSelectedTrack(TYPE_TEXT, TRACK_DISABLED);
+    player.setSelectedTrack(TYPE_DVBSUBS, TRACK_DISABLED);
+    dvbSubsSelection = false;
   }
 
   public PlayerControl getPlayerControl() {
@@ -225,6 +244,10 @@ public class DemoPlayer implements ExoPlayer.Listener, ChunkSampleSource.EventLi
 
   public void setCaptionListener(CaptionListener listener) {
     captionListener = listener;
+  }
+
+  public void setDvbTextListener(DvbTextListener listener) {
+    dvbTextListener = listener;
   }
 
   public void setMetadataListener(Id3MetadataListener listener) {
@@ -310,6 +333,7 @@ public class DemoPlayer implements ExoPlayer.Listener, ChunkSampleSource.EventLi
     }
     // Complete preparation.
     this.videoRenderer = renderers[TYPE_VIDEO];
+    this.dvbSubsRenderer = renderers[TYPE_DVBSUBS];
     this.codecCounters = videoRenderer instanceof MediaCodecTrackRenderer
         ? ((MediaCodecTrackRenderer) videoRenderer).codecCounters
         : renderers[TYPE_AUDIO] instanceof MediaCodecTrackRenderer
@@ -349,6 +373,24 @@ public class DemoPlayer implements ExoPlayer.Listener, ChunkSampleSource.EventLi
     rendererBuildingState = RENDERER_BUILDING_STATE_IDLE;
     surface = null;
     player.release();
+  }
+
+  public void switchDvbSubs() {
+    if (dvbSubsSelection == true) {
+      Log.d("Visibility", "invisible");
+      dvbSubsSelection = false;
+      dvbSubsView.setVisibility((View.INVISIBLE));
+    }
+    else {
+      Log.d("Visibility", "visible");
+      dvbSubsSelection = true;
+      dvbSubsView.setVisibility((View.VISIBLE));
+
+    }
+  }
+
+  public void setDvbSubsView(View v) {
+    dvbSubsView = v;
   }
 
   public int getPlaybackState() {
@@ -523,6 +565,14 @@ public class DemoPlayer implements ExoPlayer.Listener, ChunkSampleSource.EventLi
   }
 
   @Override
+  public void onDvbText(Bitmap bitmap) {
+    if (dvbSubsRenderer == null) {
+      return;
+    }
+    processDvbText(bitmap);
+  }
+
+  @Override
   public void onMetadata(List<Id3Frame> id3Frames) {
     if (id3MetadataListener != null && getSelectedTrack(TYPE_METADATA) != TRACK_DISABLED) {
       id3MetadataListener.onId3Metadata(id3Frames);
@@ -598,6 +648,13 @@ public class DemoPlayer implements ExoPlayer.Listener, ChunkSampleSource.EventLi
       player.sendMessage(
           videoRenderer, MediaCodecVideoTrackRenderer.MSG_SET_SURFACE, surface);
     }
+  }
+
+  void processDvbText(Bitmap bitmap) {
+    if (dvbTextListener == null || getSelectedTrack(TYPE_DVBSUBS) == TRACK_DISABLED) {
+      return;
+    }
+    dvbTextListener.onDvbText(bitmap);
   }
 
 }

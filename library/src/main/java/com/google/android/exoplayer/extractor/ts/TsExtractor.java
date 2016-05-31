@@ -48,6 +48,7 @@ public final class TsExtractor implements Extractor {
   private static final int TS_SYNC_BYTE = 0x47; // First byte of each TS packet.
   private static final int TS_PAT_PID = 0;
 
+  private static final int TS_PMT_TABLE = 1;
   private static final int TS_STREAM_TYPE_MPA = 0x03;
   private static final int TS_STREAM_TYPE_MPA_LSF = 0x04;
   private static final int TS_STREAM_TYPE_AAC = 0x0F;
@@ -60,10 +61,18 @@ public final class TsExtractor implements Extractor {
   private static final int TS_STREAM_TYPE_H265 = 0x24;
   private static final int TS_STREAM_TYPE_ID3 = 0x15;
   private static final int TS_STREAM_TYPE_EIA608 = 0x100; // 0xFF + 1
-
+  private static final int TS_STREAM_TYPE_PRIVATE_STREAM_1 = 0x06;
   private static final long AC3_FORMAT_IDENTIFIER = Util.getIntegerCodeForString("AC-3");
   private static final long E_AC3_FORMAT_IDENTIFIER = Util.getIntegerCodeForString("EAC3");
   private static final long HEVC_FORMAT_IDENTIFIER = Util.getIntegerCodeForString("HEVC");
+  private static final int DVB_PMT_DESC_VBI_DATA     = 0x45;
+  private static final int DVB_PMT_DESC_VBI_TELETEXT = 0x46;
+  private static final int DVB_PMT_DESC_TELETEXT     = 0x56;
+  private static final int DVB_PMT_DESC_SUBTITLING   = 0x59;
+  private static final int DVB_PMT_DESC_AC3          = 0x6A;
+  private static final int DVB_PMT_DESC_EAC3         = 0x7A;
+  private static final int DVB_PMT_DESC_DTS          = 0x7B;
+  private static final int DVB_PMT_DESC_AAC          = 0x7C;
 
   private final PtsTimestampAdjuster ptsTimestampAdjuster;
   private final int workaroundFlags;
@@ -71,10 +80,12 @@ public final class TsExtractor implements Extractor {
   private final ParsableBitArray tsScratch;
   /* package */ final SparseArray<TsPayloadReader> tsPayloadReaders; // Indexed by pid
   /* package */ final SparseBooleanArray streamTypes;
-
+  final SparseArray<Integer> pidToTypeMap;
   // Accessed only by the loading thread.
   private ExtractorOutput output;
   /* package */ Id3Reader id3Reader;
+
+  String dvbSubsLanguage = null;
 
   public TsExtractor() {
     this(new PtsTimestampAdjuster(0));
@@ -90,6 +101,8 @@ public final class TsExtractor implements Extractor {
     tsPacketBuffer = new ParsableByteArray(TS_PACKET_SIZE);
     tsScratch = new ParsableBitArray(new byte[3]);
     tsPayloadReaders = new SparseArray<>();
+    pidToTypeMap = new SparseArray<>();
+    pidToTypeMap.put(0,TS_PAT_PID);
     tsPayloadReaders.put(TS_PAT_PID, new PatReader());
     streamTypes = new SparseBooleanArray();
   }
@@ -240,6 +253,7 @@ public final class TsExtractor implements Extractor {
           patScratch.skipBits(13); // network_PID (13)
         } else {
           int pid = patScratch.readBits(13);
+          pidToTypeMap.put(pid,TS_PMT_TABLE);
           tsPayloadReaders.put(pid, new PmtReader());
         }
       }
@@ -272,7 +286,8 @@ public final class TsExtractor implements Extractor {
 
     @Override
     public void consume(ParsableByteArray data, boolean payloadUnitStartIndicator,
-        ExtractorOutput output) {
+                        ExtractorOutput output) {
+      ParsableBitArray descriptorScratch = null;
       if (payloadUnitStartIndicator) {
         // Skip pointer.
         int pointerField = data.readUnsignedByte();
@@ -320,7 +335,7 @@ public final class TsExtractor implements Extractor {
       }
 
       int remainingEntriesLength = sectionLength - 9 /* Length of fields before descriptors */
-          - programInfoLength - 4 /* CRC length */;
+              - programInfoLength - 4 /* CRC length */;
       while (remainingEntriesLength > 0) {
         sectionData.readBytes(pmtScratch, 5);
         int streamType = pmtScratch.readBits(8);
@@ -332,24 +347,45 @@ public final class TsExtractor implements Extractor {
           // Read descriptors in PES packets containing private data.
           streamType = readPrivateDataStreamType(sectionData, esInfoLength);
         } else {
-          sectionData.skipBytes(esInfoLength);
+          if (streamType == TS_STREAM_TYPE_MPA || streamType == TS_STREAM_TYPE_MPA_LSF) {
+            descriptorScratch = new ParsableBitArray(new byte[esInfoLength]);
+            sectionData.readBytes(descriptorScratch, esInfoLength);
+          } else {
+            sectionData.skipBytes(esInfoLength);
+          }
         }
         remainingEntriesLength -= esInfoLength + 5;
-        if (streamTypes.get(streamType)) {
+        if (pidToTypeMap.get(elementaryPid, -1) != -1) {
           continue;
         }
 
         ElementaryStreamReader pesPayloadReader;
+        String language = null;
+        int type = -1;
         switch (streamType) {
           case TS_STREAM_TYPE_MPA:
-            pesPayloadReader = new MpegAudioReader(output.track(TS_STREAM_TYPE_MPA));
+            type = descriptorScratch.readBits(8);
+            switch (type) {
+              case 0x0a:
+                language = readDescriptorAudio(descriptorScratch);
+                break;
+            }
+            pesPayloadReader = new MpegAudioReader(output.track(elementaryPid), language);
+            pidToTypeMap.put(elementaryPid, TS_STREAM_TYPE_MPA);
             break;
           case TS_STREAM_TYPE_MPA_LSF:
-            pesPayloadReader = new MpegAudioReader(output.track(TS_STREAM_TYPE_MPA_LSF));
+            type = descriptorScratch.readBits(8);
+            switch (type) {
+              case 0x0a:
+                language = readDescriptorAudio(descriptorScratch);
+                break;
+            }
+            pesPayloadReader = new MpegAudioReader(output.track(elementaryPid), language);
+            pidToTypeMap.put(elementaryPid, TS_STREAM_TYPE_MPA_LSF);
             break;
           case TS_STREAM_TYPE_AAC:
             pesPayloadReader = (workaroundFlags & WORKAROUND_IGNORE_AAC_STREAM) != 0 ? null
-                : new AdtsReader(output.track(TS_STREAM_TYPE_AAC), new DummyTrackOutput());
+                    : new AdtsReader(output.track(TS_STREAM_TYPE_AAC), new DummyTrackOutput());
             break;
           case TS_STREAM_TYPE_AC3:
             pesPayloadReader = new Ac3Reader(output.track(TS_STREAM_TYPE_AC3), false);
@@ -366,17 +402,23 @@ public final class TsExtractor implements Extractor {
             break;
           case TS_STREAM_TYPE_H264:
             pesPayloadReader = (workaroundFlags & WORKAROUND_IGNORE_H264_STREAM) != 0 ? null
-                : new H264Reader(output.track(TS_STREAM_TYPE_H264),
+                    : new H264Reader(output.track(TS_STREAM_TYPE_H264),
                     new SeiReader(output.track(TS_STREAM_TYPE_EIA608)),
                     (workaroundFlags & WORKAROUND_ALLOW_NON_IDR_KEYFRAMES) != 0,
                     (workaroundFlags & WORKAROUND_DETECT_ACCESS_UNITS) != 0);
+            pidToTypeMap.put(elementaryPid, TS_STREAM_TYPE_H264);
             break;
           case TS_STREAM_TYPE_H265:
             pesPayloadReader = new H265Reader(output.track(TS_STREAM_TYPE_H265),
-                new SeiReader(output.track(TS_STREAM_TYPE_EIA608)));
+                    new SeiReader(output.track(TS_STREAM_TYPE_EIA608)));
+            pidToTypeMap.put(elementaryPid, TS_STREAM_TYPE_H265);
             break;
           case TS_STREAM_TYPE_ID3:
             pesPayloadReader = id3Reader;
+            break;
+          case DVB_PMT_DESC_SUBTITLING:
+            pesPayloadReader = new DvbSubtitlesReader(output.track(elementaryPid), dvbSubsLanguage);
+            pidToTypeMap.put(elementaryPid, TS_STREAM_TYPE_PRIVATE_STREAM_1);
             break;
           default:
             pesPayloadReader = null;
@@ -386,7 +428,7 @@ public final class TsExtractor implements Extractor {
         if (pesPayloadReader != null) {
           streamTypes.put(streamType, true);
           tsPayloadReaders.put(elementaryPid,
-              new PesReader(pesPayloadReader, ptsTimestampAdjuster));
+                  new PesReader(pesPayloadReader, ptsTimestampAdjuster));
         }
       }
 
@@ -397,13 +439,14 @@ public final class TsExtractor implements Extractor {
      * Returns the stream type read from a registration descriptor in private data, or -1 if no
      * stream type is present. Sets {@code data}'s position to the end of the descriptors.
      *
-     * @param data A buffer with its position set to the start of the first descriptor.
+     * @param data   A buffer with its position set to the start of the first descriptor.
      * @param length The length of descriptors to read from the current position in {@code data}.
      * @return The stream type read from a registration descriptor in private data, or -1 if no
-     *     stream type is present.
+     * stream type is present.
      */
     private int readPrivateDataStreamType(ParsableByteArray data, int length) {
       int streamType = -1;
+      ParsableBitArray descriptorScratch = null;
       int descriptorsEndPosition = data.getPosition() + length;
       while (data.getPosition() < descriptorsEndPosition) {
         int descriptorTag = data.readUnsignedByte();
@@ -424,14 +467,57 @@ public final class TsExtractor implements Extractor {
           streamType = TS_STREAM_TYPE_E_AC3;
         } else if (descriptorTag == 0x7B) { // DTS_descriptor
           streamType = TS_STREAM_TYPE_DTS;
+        } else if (descriptorTag == DVB_PMT_DESC_SUBTITLING) {
+          streamType = DVB_PMT_DESC_SUBTITLING;
         }
-
-        data.skipBytes(descriptorLength);
+        if (streamType == DVB_PMT_DESC_SUBTITLING) {
+          descriptorScratch = new ParsableBitArray(new byte[descriptorLength]);
+          data.readBytes(descriptorScratch, descriptorLength);
+          dvbSubsLanguage = readDescriptorSubtitling(descriptorScratch, descriptorLength);
+        } else {
+          data.skipBytes(descriptorLength);
+        }
       }
       data.setPosition(descriptorsEndPosition);
       return streamType;
     }
 
+    String readDescriptorAudio(ParsableBitArray descriptorScratch) {
+      String lang;
+      lang = null;
+      int bytes = 0;
+      byte[] langCode = new byte[3];
+      int descriptorLength = descriptorScratch.readBits(8);
+      int languageType = 0;
+      while (bytes < descriptorLength) {
+        langCode[0] = (byte) descriptorScratch.readBits(8);
+        langCode[1] = (byte) descriptorScratch.readBits(8);
+        langCode[2] = (byte) descriptorScratch.readBits(8);
+        languageType = descriptorScratch.readBits(8);
+        bytes += 4;
+      }
+      lang = new String(langCode, 0, 3);
+      return lang;
+    }
+
+    String readDescriptorSubtitling(ParsableBitArray descriptorScratch, int descriptorLength) {
+      String lang;
+      byte[] langCode = new byte[3];
+      int subtitlingType;
+      int ancillarypageId, compositionpageId;
+      int bytes = 0;
+      while (bytes < descriptorLength) {
+        langCode[0] = (byte) descriptorScratch.readBits(8);
+        langCode[1] = (byte) descriptorScratch.readBits(8);
+        langCode[2] = (byte) descriptorScratch.readBits(8);
+        subtitlingType = descriptorScratch.readBits(8);
+        compositionpageId = descriptorScratch.readBits(16);
+        ancillarypageId = descriptorScratch.readBits(16);
+        bytes += 8;
+      }
+      lang = new String(langCode, 0, 3);
+      return lang;
+    }
   }
 
   /**
@@ -639,3 +725,4 @@ public final class TsExtractor implements Extractor {
   }
 
 }
+

@@ -180,7 +180,7 @@ public final class PsExtractor implements Extractor {
           elementaryStreamReader = new Ac3Reader(output.track(streamId), false);
           foundAudioTrack = true;
         } else if (!foundAudioTrack && (streamId & AUDIO_STREAM_MASK) == AUDIO_STREAM) {
-          elementaryStreamReader = new MpegAudioReader(output.track(streamId));
+          elementaryStreamReader = new MpegAudioReader(output.track(streamId), null);
           foundAudioTrack = true;
         } else if (!foundVideoTrack && (streamId & VIDEO_STREAM_MASK) == VIDEO_STREAM) {
           elementaryStreamReader = new H262Reader(output.track(streamId));

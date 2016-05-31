@@ -198,6 +198,18 @@ public final class MediaFormat implements Parcelable {
         NO_VALUE, NO_VALUE, NO_VALUE, NO_VALUE);
   }
 
+  public static MediaFormat createDvbSubsFormat(String mimeType, int bitrate, long durationUs,
+                                                String language) {
+    return createDvbSubsFormat(mimeType, bitrate, durationUs, language, OFFSET_SAMPLE_RELATIVE);
+  }
+
+  public static MediaFormat createDvbSubsFormat(String mimeType, int bitrate, long durationUs,
+                                                String language, long subsampleOffsetUs) {
+    return new MediaFormat("0", mimeType, bitrate, NO_VALUE, durationUs, NO_VALUE, NO_VALUE, NO_VALUE,
+            NO_VALUE, NO_VALUE, NO_VALUE, language, subsampleOffsetUs, null, false, NO_VALUE, NO_VALUE,
+            NO_VALUE, NO_VALUE, NO_VALUE);
+  }
+
   public static MediaFormat createImageFormat(String trackId, String mimeType, int bitrate,
       long durationUs, List<byte[]> initializationData, String language) {
     return new MediaFormat(trackId, mimeType, bitrate, NO_VALUE, durationUs, NO_VALUE, NO_VALUE,

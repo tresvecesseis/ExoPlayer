@@ -43,6 +43,7 @@ import com.google.android.exoplayer.util.DebugTextViewHelper;
 import com.google.android.exoplayer.util.MimeTypes;
 import com.google.android.exoplayer.util.Util;
 import com.google.android.exoplayer.util.VerboseLogUtil;
+import com.google.android.exoplayer.text.DvbSubtitleView;
 
 import android.Manifest.permission;
 import android.annotation.TargetApi;
@@ -50,6 +51,7 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Bundle;
 import android.text.TextUtils;
@@ -82,7 +84,7 @@ import java.util.Locale;
  * An activity that plays media using {@link DemoPlayer}.
  */
 public class PlayerActivity extends Activity implements SurfaceHolder.Callback, OnClickListener,
-    DemoPlayer.Listener, DemoPlayer.CaptionListener, DemoPlayer.Id3MetadataListener,
+    DemoPlayer.Listener, DemoPlayer.CaptionListener, DemoPlayer.Id3MetadataListener, DemoPlayer.DvbTextListener,
     AudioCapabilitiesReceiver.Listener {
 
   // For use within demo app code.
@@ -111,11 +113,13 @@ public class PlayerActivity extends Activity implements SurfaceHolder.Callback, 
   private SurfaceView surfaceView;
   private TextView debugTextView;
   private TextView playerStateTextView;
+  private DvbSubtitleView dvbSubtitleView;
   private SubtitleLayout subtitleLayout;
   private Button videoButton;
   private Button audioButton;
   private Button textButton;
   private Button retryButton;
+  private Button dvbSubsButton;
 
   private DemoPlayer player;
   private DebugTextViewHelper debugViewHelper;
@@ -172,6 +176,7 @@ public class PlayerActivity extends Activity implements SurfaceHolder.Callback, 
     playerStateTextView = (TextView) findViewById(R.id.player_state_view);
     subtitleLayout = (SubtitleLayout) findViewById(R.id.subtitles);
 
+    dvbSubtitleView = (DvbSubtitleView) findViewById(R.id.dvbSubtitles);
     mediaController = new KeyCompatibleMediaController(this);
     mediaController.setAnchorView(root);
     retryButton = (Button) findViewById(R.id.retry_button);
@@ -179,6 +184,7 @@ public class PlayerActivity extends Activity implements SurfaceHolder.Callback, 
     videoButton = (Button) findViewById(R.id.video_controls);
     audioButton = (Button) findViewById(R.id.audio_controls);
     textButton = (Button) findViewById(R.id.text_controls);
+    dvbSubsButton = (Button) findViewById(R.id.dvb_subs_controls);
 
     CookieHandler currentHandler = CookieHandler.getDefault();
     if (currentHandler != defaultCookieManager) {
@@ -350,6 +356,7 @@ public class PlayerActivity extends Activity implements SurfaceHolder.Callback, 
       player.addListener(this);
       player.setCaptionListener(this);
       player.setMetadataListener(this);
+      player.setDvbTextListener(this);
       player.seekTo(playerPosition);
       playerNeedsPrepare = true;
       mediaController.setMediaPlayer(player.getPlayerControl());
@@ -369,6 +376,7 @@ public class PlayerActivity extends Activity implements SurfaceHolder.Callback, 
     }
     player.setSurface(surfaceView.getHolder().getSurface());
     player.setPlayWhenReady(playWhenReady);
+    player.setDvbSubsView(dvbSubtitleView);
   }
 
   private void releasePlayer() {
@@ -467,6 +475,7 @@ public class PlayerActivity extends Activity implements SurfaceHolder.Callback, 
     videoButton.setVisibility(haveTracks(DemoPlayer.TYPE_VIDEO) ? View.VISIBLE : View.GONE);
     audioButton.setVisibility(haveTracks(DemoPlayer.TYPE_AUDIO) ? View.VISIBLE : View.GONE);
     textButton.setVisibility(haveTracks(DemoPlayer.TYPE_TEXT) ? View.VISIBLE : View.GONE);
+    dvbSubsButton.setVisibility(haveTracks(DemoPlayer.TYPE_DVBSUBS) ? View.VISIBLE : View.GONE);
   }
 
   private boolean haveTracks(int type) {
@@ -497,6 +506,12 @@ public class PlayerActivity extends Activity implements SurfaceHolder.Callback, 
       }
     };
     configurePopupWithTracks(popup, clickListener, DemoPlayer.TYPE_AUDIO);
+    popup.show();
+  }
+
+  public void showDvbSubsPopup(View v) {
+    PopupMenu popup = new PopupMenu(this, v);
+    configurePopupWithTracks(popup, null, DemoPlayer.TYPE_DVBSUBS);
     popup.show();
   }
 
@@ -607,6 +622,11 @@ public class PlayerActivity extends Activity implements SurfaceHolder.Callback, 
     if (player == null || item.getGroupId() != MENU_GROUP_TRACKS) {
       return false;
     }
+    if (type == DemoPlayer.TYPE_DVBSUBS && ((player.getSelectedTrack(DemoPlayer.TYPE_DVBSUBS) != -1
+            && item.getItemId() == 1) || (player.getSelectedTrack(DemoPlayer.TYPE_DVBSUBS) == -1
+            && item.getItemId() > 1))) {
+      player.switchDvbSubs();
+    }
     player.setSelectedTrack(type, item.getItemId() - ID_OFFSET);
     return true;
   }
@@ -632,6 +652,13 @@ public class PlayerActivity extends Activity implements SurfaceHolder.Callback, 
     subtitleLayout.setCues(cues);
   }
 
+  @Override
+  public void onDvbText(Bitmap bitmap) {
+    dvbSubtitleView.setVisibility((View.VISIBLE));
+    dvbSubtitleView.setDvbSubtitlesBitmap(bitmap);
+    dvbSubtitleView.invalidate();
+    bitmap = null;
+  }
   // DemoPlayer.MetadataListener implementation
 
   @Override

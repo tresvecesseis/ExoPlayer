@@ -49,14 +49,18 @@ import com.google.android.exoplayer.util.ParsableByteArray;
   // The timestamp to attach to the next sample in the current packet.
   private long timeUs;
 
-  public MpegAudioReader(TrackOutput output) {
+  private String language;
+
+  public MpegAudioReader(TrackOutput output, String lang) {
     super(output);
     state = STATE_FINDING_HEADER;
     // The first byte of an MPEG Audio frame header is always 0xFF.
     headerScratch = new ParsableByteArray(4);
     headerScratch.data[0] = (byte) 0xFF;
     header = new MpegAudioHeader();
+    language = lang;
   }
+
 
   @Override
   public void seek() {
@@ -164,7 +168,7 @@ import com.google.android.exoplayer.util.ParsableByteArray;
       frameDurationUs = (C.MICROS_PER_SECOND * header.samplesPerFrame) / header.sampleRate;
       MediaFormat mediaFormat = MediaFormat.createAudioFormat(null, header.mimeType,
           MediaFormat.NO_VALUE, MpegAudioHeader.MAX_FRAME_SIZE_BYTES, C.UNKNOWN_TIME_US,
-          header.channels, header.sampleRate, null, null);
+          header.channels, header.sampleRate, null, language);
       output.format(mediaFormat);
       hasOutputFormat = true;
     }
