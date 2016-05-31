@@ -264,7 +264,7 @@ public class DvbSubtitlesParser {
       if(displayCounter == 0) {
         displays = new DvbSubDisplay[1];
         displays[0] = new DvbSubDisplay();
-        displayCounter = 0;
+        displayCounter = 1;
       } else {
         displays = Arrays.copyOf(displays, displayCounter + 1);
         displayCounter++;
