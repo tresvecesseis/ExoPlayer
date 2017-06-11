@@ -366,9 +366,8 @@ public final class DefaultTrackOutput implements TrackOutput {
     }
 
     // Populate the cryptoInfo.
-    CryptoData cryptoData = extrasHolder.cryptoData;
     buffer.cryptoInfo.set(subsampleCount, clearDataSizes, encryptedDataSizes,
-        cryptoData.encryptionKey, buffer.cryptoInfo.iv, cryptoData.cryptoMode);
+        extrasHolder.encryptionKeyId, buffer.cryptoInfo.iv, C.CRYPTO_MODE_AES_CTR);
 
     // Adjust the offset and size to take into account the bytes read.
     int bytesRead = (int) (offset - extrasHolder.offset);
@@ -517,7 +516,7 @@ public final class DefaultTrackOutput implements TrackOutput {
 
   @Override
   public void sampleMetadata(long timeUs, @C.BufferFlags int flags, int size, int offset,
-      CryptoData cryptoData) {
+      byte[] encryptionKey) {
     if (pendingFormatAdjustment) {
       format(lastUnadjustedFormat);
     }
@@ -534,7 +533,7 @@ public final class DefaultTrackOutput implements TrackOutput {
       }
       timeUs += sampleOffsetUs;
       long absoluteOffset = totalBytesWritten - size - offset;
-      infoQueue.commitSample(timeUs, flags, absoluteOffset, size, cryptoData);
+      infoQueue.commitSample(timeUs, flags, absoluteOffset, size, encryptionKey);
     } finally {
       endWriteOperation();
     }
@@ -607,7 +606,7 @@ public final class DefaultTrackOutput implements TrackOutput {
     private int[] sizes;
     private int[] flags;
     private long[] timesUs;
-    private CryptoData[] cryptoDatas;
+    private byte[][] encryptionKeys;
     private Format[] formats;
 
     private int queueSize;
@@ -629,7 +628,7 @@ public final class DefaultTrackOutput implements TrackOutput {
       timesUs = new long[capacity];
       flags = new int[capacity];
       sizes = new int[capacity];
-      cryptoDatas = new CryptoData[capacity];
+      encryptionKeys = new byte[capacity][];
       formats = new Format[capacity];
       largestDequeuedTimestampUs = Long.MIN_VALUE;
       largestQueuedTimestampUs = Long.MIN_VALUE;
@@ -793,7 +792,7 @@ public final class DefaultTrackOutput implements TrackOutput {
       buffer.setFlags(flags[relativeReadIndex]);
       extrasHolder.size = sizes[relativeReadIndex];
       extrasHolder.offset = offsets[relativeReadIndex];
-      extrasHolder.cryptoData = cryptoDatas[relativeReadIndex];
+      extrasHolder.encryptionKeyId = encryptionKeys[relativeReadIndex];
 
       largestDequeuedTimestampUs = Math.max(largestDequeuedTimestampUs, buffer.timeUs);
       queueSize--;
@@ -893,7 +892,7 @@ public final class DefaultTrackOutput implements TrackOutput {
     }
 
     public synchronized void commitSample(long timeUs, @C.BufferFlags int sampleFlags, long offset,
-        int size, CryptoData cryptoData) {
+        int size, byte[] encryptionKey) {
       if (upstreamKeyframeRequired) {
         if ((sampleFlags & C.BUFFER_FLAG_KEY_FRAME) == 0) {
           return;
@@ -906,7 +905,7 @@ public final class DefaultTrackOutput implements TrackOutput {
       offsets[relativeWriteIndex] = offset;
       sizes[relativeWriteIndex] = size;
       flags[relativeWriteIndex] = sampleFlags;
-      cryptoDatas[relativeWriteIndex] = cryptoData;
+      encryptionKeys[relativeWriteIndex] = encryptionKey;
       formats[relativeWriteIndex] = upstreamFormat;
       sourceIds[relativeWriteIndex] = upstreamSourceId;
       // Increment the write index.
@@ -919,14 +918,14 @@ public final class DefaultTrackOutput implements TrackOutput {
         long[] newTimesUs = new long[newCapacity];
         int[] newFlags = new int[newCapacity];
         int[] newSizes = new int[newCapacity];
-        CryptoData[] newCryptoDatas = new CryptoData[newCapacity];
+        byte[][] newEncryptionKeys = new byte[newCapacity][];
         Format[] newFormats = new Format[newCapacity];
         int beforeWrap = capacity - relativeReadIndex;
         System.arraycopy(offsets, relativeReadIndex, newOffsets, 0, beforeWrap);
         System.arraycopy(timesUs, relativeReadIndex, newTimesUs, 0, beforeWrap);
         System.arraycopy(flags, relativeReadIndex, newFlags, 0, beforeWrap);
         System.arraycopy(sizes, relativeReadIndex, newSizes, 0, beforeWrap);
-        System.arraycopy(cryptoDatas, relativeReadIndex, newCryptoDatas, 0, beforeWrap);
+        System.arraycopy(encryptionKeys, relativeReadIndex, newEncryptionKeys, 0, beforeWrap);
         System.arraycopy(formats, relativeReadIndex, newFormats, 0, beforeWrap);
         System.arraycopy(sourceIds, relativeReadIndex, newSourceIds, 0, beforeWrap);
         int afterWrap = relativeReadIndex;
@@ -934,14 +933,14 @@ public final class DefaultTrackOutput implements TrackOutput {
         System.arraycopy(timesUs, 0, newTimesUs, beforeWrap, afterWrap);
         System.arraycopy(flags, 0, newFlags, beforeWrap, afterWrap);
         System.arraycopy(sizes, 0, newSizes, beforeWrap, afterWrap);
-        System.arraycopy(cryptoDatas, 0, newCryptoDatas, beforeWrap, afterWrap);
+        System.arraycopy(encryptionKeys, 0, newEncryptionKeys, beforeWrap, afterWrap);
         System.arraycopy(formats, 0, newFormats, beforeWrap, afterWrap);
         System.arraycopy(sourceIds, 0, newSourceIds, beforeWrap, afterWrap);
         offsets = newOffsets;
         timesUs = newTimesUs;
         flags = newFlags;
         sizes = newSizes;
-        cryptoDatas = newCryptoDatas;
+        encryptionKeys = newEncryptionKeys;
         formats = newFormats;
         sourceIds = newSourceIds;
         relativeReadIndex = 0;
@@ -991,7 +990,7 @@ public final class DefaultTrackOutput implements TrackOutput {
     public int size;
     public long offset;
     public long nextOffset;
-    public CryptoData cryptoData;
+    public byte[] encryptionKeyId;
 
   }
 

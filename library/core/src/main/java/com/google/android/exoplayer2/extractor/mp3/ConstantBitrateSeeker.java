@@ -16,7 +16,6 @@
 package com.google.android.exoplayer2.extractor.mp3;
 
 import com.google.android.exoplayer2.C;
-import com.google.android.exoplayer2.util.Util;
 
 /**
  * MP3 seeker that doesn't rely on metadata and seeks assuming the source has a constant bitrate.
@@ -42,11 +41,8 @@ import com.google.android.exoplayer2.util.Util;
 
   @Override
   public long getPosition(long timeUs) {
-    if (durationUs == C.TIME_UNSET) {
-      return 0;
-    }
-    timeUs = Util.constrainValue(timeUs, 0, durationUs);
-    return firstFramePosition + (timeUs * bitrate) / (C.MICROS_PER_SECOND * BITS_PER_BYTE);
+    return durationUs == C.TIME_UNSET ? 0
+        : firstFramePosition + (timeUs * bitrate) / (C.MICROS_PER_SECOND * BITS_PER_BYTE);
   }
 
   @Override

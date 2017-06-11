@@ -92,6 +92,128 @@ package com.google.android.exoplayer2;
 public abstract class Timeline {
 
   /**
+   * An empty timeline.
+   */
+  public static final Timeline EMPTY = new Timeline() {
+
+    @Override
+    public int getWindowCount() {
+      return 0;
+    }
+
+    @Override
+    public Window getWindow(int windowIndex, Window window, boolean setIds,
+        long defaultPositionProjectionUs) {
+      throw new IndexOutOfBoundsException();
+    }
+
+    @Override
+    public int getPeriodCount() {
+      return 0;
+    }
+
+    @Override
+    public Period getPeriod(int periodIndex, Period period, boolean setIds) {
+      throw new IndexOutOfBoundsException();
+    }
+
+    @Override
+    public int getIndexOfPeriod(Object uid) {
+      return C.INDEX_UNSET;
+    }
+
+  };
+
+  /**
+   * Returns whether the timeline is empty.
+   */
+  public final boolean isEmpty() {
+    return getWindowCount() == 0;
+  }
+
+  /**
+   * Returns the number of windows in the timeline.
+   */
+  public abstract int getWindowCount();
+
+  /**
+   * Populates a {@link Window} with data for the window at the specified index. Does not populate
+   * {@link Window#id}.
+   *
+   * @param windowIndex The index of the window.
+   * @param window The {@link Window} to populate. Must not be null.
+   * @return The populated {@link Window}, for convenience.
+   */
+  public final Window getWindow(int windowIndex, Window window) {
+    return getWindow(windowIndex, window, false);
+  }
+
+  /**
+   * Populates a {@link Window} with data for the window at the specified index.
+   *
+   * @param windowIndex The index of the window.
+   * @param window The {@link Window} to populate. Must not be null.
+   * @param setIds Whether {@link Window#id} should be populated. If false, the field will be set to
+   *     null. The caller should pass false for efficiency reasons unless the field is required.
+   * @return The populated {@link Window}, for convenience.
+   */
+  public Window getWindow(int windowIndex, Window window, boolean setIds) {
+    return getWindow(windowIndex, window, setIds, 0);
+  }
+
+  /**
+   * Populates a {@link Window} with data for the window at the specified index.
+   *
+   * @param windowIndex The index of the window.
+   * @param window The {@link Window} to populate. Must not be null.
+   * @param setIds Whether {@link Window#id} should be populated. If false, the field will be set to
+   *     null. The caller should pass false for efficiency reasons unless the field is required.
+   * @param defaultPositionProjectionUs A duration into the future that the populated window's
+   *     default start position should be projected.
+   * @return The populated {@link Window}, for convenience.
+   */
+  public abstract Window getWindow(int windowIndex, Window window, boolean setIds,
+      long defaultPositionProjectionUs);
+
+  /**
+   * Returns the number of periods in the timeline.
+   */
+  public abstract int getPeriodCount();
+
+  /**
+   * Populates a {@link Period} with data for the period at the specified index. Does not populate
+   * {@link Period#id} and {@link Period#uid}.
+   *
+   * @param periodIndex The index of the period.
+   * @param period The {@link Period} to populate. Must not be null.
+   * @return The populated {@link Period}, for convenience.
+   */
+  public final Period getPeriod(int periodIndex, Period period) {
+    return getPeriod(periodIndex, period, false);
+  }
+
+  /**
+   * Populates a {@link Period} with data for the period at the specified index.
+   *
+   * @param periodIndex The index of the period.
+   * @param period The {@link Period} to populate. Must not be null.
+   * @param setIds Whether {@link Period#id} and {@link Period#uid} should be populated. If false,
+   *     the fields will be set to null. The caller should pass false for efficiency reasons unless
+   *     the fields are required.
+   * @return The populated {@link Period}, for convenience.
+   */
+  public abstract Period getPeriod(int periodIndex, Period period, boolean setIds);
+
+  /**
+   * Returns the index of the period identified by its unique {@code id}, or {@link C#INDEX_UNSET}
+   * if the period is not in the timeline.
+   *
+   * @param uid A unique identifier for a period.
+   * @return The index of the period, or {@link C#INDEX_UNSET} if the period was not found.
+   */
+  public abstract int getIndexOfPeriod(Object uid);
+
+  /**
    * Holds information about a window in a {@link Timeline}. A window defines a region of media
    * currently available for playback along with additional information such as whether seeking is
    * supported within the window. See {@link Timeline} for more details. The figure below shows some
@@ -315,231 +437,5 @@ public abstract class Timeline {
     }
 
   }
-
-  /**
-   * An empty timeline.
-   */
-  public static final Timeline EMPTY = new Timeline() {
-
-    @Override
-    public int getWindowCount() {
-      return 0;
-    }
-
-    @Override
-    public Window getWindow(int windowIndex, Window window, boolean setIds,
-        long defaultPositionProjectionUs) {
-      throw new IndexOutOfBoundsException();
-    }
-
-    @Override
-    public int getPeriodCount() {
-      return 0;
-    }
-
-    @Override
-    public Period getPeriod(int periodIndex, Period period, boolean setIds) {
-      throw new IndexOutOfBoundsException();
-    }
-
-    @Override
-    public int getIndexOfPeriod(Object uid) {
-      return C.INDEX_UNSET;
-    }
-
-  };
-
-  /**
-   * Returns whether the timeline is empty.
-   */
-  public final boolean isEmpty() {
-    return getWindowCount() == 0;
-  }
-
-  /**
-   * Returns the number of windows in the timeline.
-   */
-  public abstract int getWindowCount();
-
-  /**
-   * Returns the index of the window after the window at index {@code windowIndex} depending on the
-   * {@code repeatMode}.
-   *
-   * @param windowIndex Index of a window in the timeline.
-   * @param repeatMode A repeat mode.
-   * @return The index of the next window, or {@link C#INDEX_UNSET} if this is the last window.
-   */
-  public int getNextWindowIndex(int windowIndex, @ExoPlayer.RepeatMode int repeatMode) {
-    switch (repeatMode) {
-      case ExoPlayer.REPEAT_MODE_OFF:
-        return windowIndex == getWindowCount() - 1 ? C.INDEX_UNSET : windowIndex + 1;
-      case ExoPlayer.REPEAT_MODE_ONE:
-        return windowIndex;
-      case ExoPlayer.REPEAT_MODE_ALL:
-        return windowIndex == getWindowCount() - 1 ? 0 : windowIndex + 1;
-      default:
-        throw new IllegalStateException();
-    }
-  }
-
-  /**
-   * Returns the index of the window before the window at index {@code windowIndex} depending on the
-   * {@code repeatMode}.
-   *
-   * @param windowIndex Index of a window in the timeline.
-   * @param repeatMode A repeat mode.
-   * @return The index of the previous window, or {@link C#INDEX_UNSET} if this is the first window.
-   */
-  public int getPreviousWindowIndex(int windowIndex, @ExoPlayer.RepeatMode int repeatMode) {
-    switch (repeatMode) {
-      case ExoPlayer.REPEAT_MODE_OFF:
-        return windowIndex == 0 ? C.INDEX_UNSET : windowIndex - 1;
-      case ExoPlayer.REPEAT_MODE_ONE:
-        return windowIndex;
-      case ExoPlayer.REPEAT_MODE_ALL:
-        return windowIndex == 0 ? getWindowCount() - 1 : windowIndex - 1;
-      default:
-        throw new IllegalStateException();
-    }
-  }
-
-  /**
-   * Returns whether the given window is the last window of the timeline depending on the
-   * {@code repeatMode}.
-   *
-   * @param windowIndex A window index.
-   * @param repeatMode A repeat mode.
-   * @return Whether the window of the given index is the last window of the timeline.
-   */
-  public final boolean isLastWindow(int windowIndex, @ExoPlayer.RepeatMode int repeatMode) {
-    return getNextWindowIndex(windowIndex, repeatMode) == C.INDEX_UNSET;
-  }
-
-  /**
-   * Returns whether the given window is the first window of the timeline depending on the
-   * {@code repeatMode}.
-   *
-   * @param windowIndex A window index.
-   * @param repeatMode A repeat mode.
-   * @return Whether the window of the given index is the first window of the timeline.
-   */
-  public final boolean isFirstWindow(int windowIndex, @ExoPlayer.RepeatMode int repeatMode) {
-    return getPreviousWindowIndex(windowIndex, repeatMode) == C.INDEX_UNSET;
-  }
-
-  /**
-   * Populates a {@link Window} with data for the window at the specified index. Does not populate
-   * {@link Window#id}.
-   *
-   * @param windowIndex The index of the window.
-   * @param window The {@link Window} to populate. Must not be null.
-   * @return The populated {@link Window}, for convenience.
-   */
-  public final Window getWindow(int windowIndex, Window window) {
-    return getWindow(windowIndex, window, false);
-  }
-
-  /**
-   * Populates a {@link Window} with data for the window at the specified index.
-   *
-   * @param windowIndex The index of the window.
-   * @param window The {@link Window} to populate. Must not be null.
-   * @param setIds Whether {@link Window#id} should be populated. If false, the field will be set to
-   *     null. The caller should pass false for efficiency reasons unless the field is required.
-   * @return The populated {@link Window}, for convenience.
-   */
-  public Window getWindow(int windowIndex, Window window, boolean setIds) {
-    return getWindow(windowIndex, window, setIds, 0);
-  }
-
-  /**
-   * Populates a {@link Window} with data for the window at the specified index.
-   *
-   * @param windowIndex The index of the window.
-   * @param window The {@link Window} to populate. Must not be null.
-   * @param setIds Whether {@link Window#id} should be populated. If false, the field will be set to
-   *     null. The caller should pass false for efficiency reasons unless the field is required.
-   * @param defaultPositionProjectionUs A duration into the future that the populated window's
-   *     default start position should be projected.
-   * @return The populated {@link Window}, for convenience.
-   */
-  public abstract Window getWindow(int windowIndex, Window window, boolean setIds,
-      long defaultPositionProjectionUs);
-
-  /**
-   * Returns the number of periods in the timeline.
-   */
-  public abstract int getPeriodCount();
-
-  /**
-   * Returns the index of the period after the period at index {@code periodIndex} depending on the
-   * {@code repeatMode}.
-   *
-   * @param periodIndex Index of a period in the timeline.
-   * @param period A {@link Period} to be used internally. Must not be null.
-   * @param window A {@link Window} to be used internally. Must not be null.
-   * @param repeatMode A repeat mode.
-   * @return The index of the next period, or {@link C#INDEX_UNSET} if this is the last period.
-   */
-  public final int getNextPeriodIndex(int periodIndex, Period period, Window window,
-      @ExoPlayer.RepeatMode int repeatMode) {
-    int windowIndex = getPeriod(periodIndex, period).windowIndex;
-    if (getWindow(windowIndex, window).lastPeriodIndex == periodIndex) {
-      int nextWindowIndex = getNextWindowIndex(windowIndex, repeatMode);
-      if (nextWindowIndex == C.INDEX_UNSET) {
-        return C.INDEX_UNSET;
-      }
-      return getWindow(nextWindowIndex, window).firstPeriodIndex;
-    }
-    return periodIndex + 1;
-  }
-
-  /**
-   * Returns whether the given period is the last period of the timeline depending on the
-   * {@code repeatMode}.
-   *
-   * @param periodIndex A period index.
-   * @param period A {@link Period} to be used internally. Must not be null.
-   * @param window A {@link Window} to be used internally. Must not be null.
-   * @param repeatMode A repeat mode.
-   * @return Whether the period of the given index is the last period of the timeline.
-   */
-  public final boolean isLastPeriod(int periodIndex, Period period, Window window,
-      @ExoPlayer.RepeatMode int repeatMode) {
-    return getNextPeriodIndex(periodIndex, period, window, repeatMode) == C.INDEX_UNSET;
-  }
-
-  /**
-   * Populates a {@link Period} with data for the period at the specified index. Does not populate
-   * {@link Period#id} and {@link Period#uid}.
-   *
-   * @param periodIndex The index of the period.
-   * @param period The {@link Period} to populate. Must not be null.
-   * @return The populated {@link Period}, for convenience.
-   */
-  public final Period getPeriod(int periodIndex, Period period) {
-    return getPeriod(periodIndex, period, false);
-  }
-
-  /**
-   * Populates a {@link Period} with data for the period at the specified index.
-   *
-   * @param periodIndex The index of the period.
-   * @param period The {@link Period} to populate. Must not be null.
-   * @param setIds Whether {@link Period#id} and {@link Period#uid} should be populated. If false,
-   *     the fields will be set to null. The caller should pass false for efficiency reasons unless
-   *     the fields are required.
-   * @return The populated {@link Period}, for convenience.
-   */
-  public abstract Period getPeriod(int periodIndex, Period period, boolean setIds);
-
-  /**
-   * Returns the index of the period identified by its unique {@code id}, or {@link C#INDEX_UNSET}
-   * if the period is not in the timeline.
-   *
-   * @param uid A unique identifier for a period.
-   * @return The index of the period, or {@link C#INDEX_UNSET} if the period was not found.
-   */
-  public abstract int getIndexOfPeriod(Object uid);
 
 }

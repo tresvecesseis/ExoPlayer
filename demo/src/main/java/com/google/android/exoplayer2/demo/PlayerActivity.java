@@ -16,7 +16,6 @@
 package com.google.android.exoplayer2.demo;
 
 import android.app.Activity;
-import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
@@ -24,16 +23,16 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.support.annotation.NonNull;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.View.OnClickListener;
-import android.view.ViewGroup;
 import android.widget.Button;
-import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 import com.google.android.exoplayer2.C;
+import com.google.android.exoplayer2.DefaultLoadControl;
 import com.google.android.exoplayer2.DefaultRenderersFactory;
 import com.google.android.exoplayer2.ExoPlaybackException;
 import com.google.android.exoplayer2.ExoPlayer;
@@ -58,6 +57,7 @@ import com.google.android.exoplayer2.source.TrackGroupArray;
 import com.google.android.exoplayer2.source.dash.DashMediaSource;
 import com.google.android.exoplayer2.source.dash.DefaultDashChunkSource;
 import com.google.android.exoplayer2.source.hls.HlsMediaSource;
+import com.google.android.exoplayer2.source.iptv.IptvExtractorsFactory;
 import com.google.android.exoplayer2.source.smoothstreaming.DefaultSsChunkSource;
 import com.google.android.exoplayer2.source.smoothstreaming.SsMediaSource;
 import com.google.android.exoplayer2.trackselection.AdaptiveTrackSelection;
@@ -69,10 +69,10 @@ import com.google.android.exoplayer2.ui.DebugTextViewHelper;
 import com.google.android.exoplayer2.ui.PlaybackControlView;
 import com.google.android.exoplayer2.ui.SimpleExoPlayerView;
 import com.google.android.exoplayer2.upstream.DataSource;
+import com.google.android.exoplayer2.upstream.DefaultAllocator;
 import com.google.android.exoplayer2.upstream.DefaultBandwidthMeter;
 import com.google.android.exoplayer2.upstream.HttpDataSource;
 import com.google.android.exoplayer2.util.Util;
-import java.lang.reflect.Constructor;
 import java.net.CookieHandler;
 import java.net.CookieManager;
 import java.net.CookiePolicy;
@@ -96,7 +96,6 @@ public class PlayerActivity extends Activity implements OnClickListener, ExoPlay
       "com.google.android.exoplayer.demo.action.VIEW_LIST";
   public static final String URI_LIST_EXTRA = "uri_list";
   public static final String EXTENSION_LIST_EXTRA = "extension_list";
-  public static final String AD_TAG_URI_EXTRA = "ad_tag_uri";
 
   private static final DefaultBandwidthMeter BANDWIDTH_METER = new DefaultBandwidthMeter();
   private static final CookieManager DEFAULT_COOKIE_MANAGER;
@@ -239,13 +238,7 @@ public class PlayerActivity extends Activity implements OnClickListener, ExoPlay
     Intent intent = getIntent();
     boolean needNewPlayer = player == null;
     if (needNewPlayer) {
-      TrackSelection.Factory adaptiveTrackSelectionFactory =
-          new AdaptiveTrackSelection.Factory(BANDWIDTH_METER);
-      trackSelector = new DefaultTrackSelector(adaptiveTrackSelectionFactory);
-      trackSelectionHelper = new TrackSelectionHelper(trackSelector, adaptiveTrackSelectionFactory);
-      lastSeenTrackGroupArray = null;
-      eventLogger = new EventLogger(trackSelector);
-
+      boolean preferExtensionDecoders = intent.getBooleanExtra(PREFER_EXTENSION_DECODERS, false);
       UUID drmSchemeUuid = intent.hasExtra(DRM_SCHEME_UUID_EXTRA)
           ? UUID.fromString(intent.getStringExtra(DRM_SCHEME_UUID_EXTRA)) : null;
       DrmSessionManager<FrameworkMediaCrypto> drmSessionManager = null;
@@ -264,7 +257,6 @@ public class PlayerActivity extends Activity implements OnClickListener, ExoPlay
         }
       }
 
-      boolean preferExtensionDecoders = intent.getBooleanExtra(PREFER_EXTENSION_DECODERS, false);
       @DefaultRenderersFactory.ExtensionRendererMode int extensionRendererMode =
           ((DemoApplication) getApplication()).useExtensionRenderers()
               ? (preferExtensionDecoders ? DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
@@ -273,8 +265,18 @@ public class PlayerActivity extends Activity implements OnClickListener, ExoPlay
       DefaultRenderersFactory renderersFactory = new DefaultRenderersFactory(this,
           drmSessionManager, extensionRendererMode);
 
-      player = ExoPlayerFactory.newSimpleInstance(renderersFactory, trackSelector);
+      TrackSelection.Factory videoTrackSelectionFactory =
+          new AdaptiveTrackSelection.Factory(BANDWIDTH_METER);
+      trackSelector = new DefaultTrackSelector(videoTrackSelectionFactory);
+      trackSelectionHelper = new TrackSelectionHelper(trackSelector, videoTrackSelectionFactory);
+      lastSeenTrackGroupArray = null;
+
+      player = ExoPlayerFactory.newSimpleInstance(renderersFactory, trackSelector,
+              new DefaultLoadControl(new DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE),
+                      15000, 30000, 500, 0));
       player.addListener(this);
+
+      eventLogger = new EventLogger(trackSelector);
       player.addListener(eventLogger);
       player.setAudioDebugListener(eventLogger);
       player.setVideoDebugListener(eventLogger);
@@ -316,30 +318,13 @@ public class PlayerActivity extends Activity implements OnClickListener, ExoPlay
       }
       MediaSource mediaSource = mediaSources.length == 1 ? mediaSources[0]
           : new ConcatenatingMediaSource(mediaSources);
-      String adTagUriString = intent.getStringExtra(AD_TAG_URI_EXTRA);
-      if (adTagUriString != null) {
-        Uri adTagUri = Uri.parse(adTagUriString);
-        ViewGroup adOverlayViewGroup = new FrameLayout(this);
-        // Load the extension source using reflection so that demo app doesn't have to depend on it.
-        try {
-          Class<?> clazz = Class.forName("com.google.android.exoplayer2.ext.ima.ImaAdsMediaSource");
-          Constructor<?> constructor = clazz.getConstructor(MediaSource.class,
-              DataSource.Factory.class, Context.class, Uri.class, ViewGroup.class);
-          mediaSource = (MediaSource) constructor.newInstance(mediaSource,
-              mediaDataSourceFactory, this, adTagUri, adOverlayViewGroup);
-          // The demo app has a non-null overlay frame layout.
-          simpleExoPlayerView.getOverlayFrameLayout().addView(adOverlayViewGroup);
-          // Show a multi-window time bar, which will include ad break position markers.
-          simpleExoPlayerView.setShowMultiWindowTimeBar(true);
-        } catch (Exception e) {
-          // Throw if the media source class was not found, or there was an error instantiating it.
-          showToast(R.string.ima_not_loaded);
-        }
-      }
       boolean haveResumePosition = resumeWindow != C.INDEX_UNSET;
       if (haveResumePosition) {
         player.seekTo(resumeWindow, resumePosition);
       }
+
+      Log.v("PlayerActivity", "resumePosition: [" + haveResumePosition + "]");
+
       player.prepare(mediaSource, !haveResumePosition, false);
       needRetrySource = false;
       updateButtonVisibilities();
@@ -359,8 +344,15 @@ public class PlayerActivity extends Activity implements OnClickListener, ExoPlay
       case C.TYPE_HLS:
         return new HlsMediaSource(uri, mediaDataSourceFactory, mainHandler, eventLogger);
       case C.TYPE_OTHER:
-        return new ExtractorMediaSource(uri, mediaDataSourceFactory, new DefaultExtractorsFactory(),
-            mainHandler, eventLogger);
+        if (uri.getScheme().equals("iptv"))
+          return new ExtractorMediaSource(uri, buildIptvDataSourceFactory(false), new IptvExtractorsFactory(),
+                  mainHandler, eventLogger);
+        else if (uri.getScheme().equals("udp"))
+          return new ExtractorMediaSource(uri, mediaDataSourceFactory, new IptvExtractorsFactory(),
+                  mainHandler, eventLogger);
+        else
+          return new ExtractorMediaSource(uri, mediaDataSourceFactory, new DefaultExtractorsFactory(),
+                  mainHandler, eventLogger);
       default: {
         throw new IllegalStateException("Unsupported type: " + type);
       }
@@ -433,6 +425,19 @@ public class PlayerActivity extends Activity implements OnClickListener, ExoPlay
         .buildHttpDataSourceFactory(useBandwidthMeter ? BANDWIDTH_METER : null);
   }
 
+  /**
+   * Returns a new IptvDataSource3 factory.
+   *
+   * @param useBandwidthMeter Whether to set {@link #BANDWIDTH_METER} as a listener to the new
+   *     DataSource factory.
+   * @return A new DataSource factory.
+   */
+  private DataSource.Factory buildIptvDataSourceFactory(boolean useBandwidthMeter) {
+    return ((DemoApplication) getApplication())
+            .buildIptvDataSourceFactory(useBandwidthMeter ? BANDWIDTH_METER : null);
+  }
+
+
   // ExoPlayer.EventListener implementation
 
   @Override
@@ -446,11 +451,6 @@ public class PlayerActivity extends Activity implements OnClickListener, ExoPlay
       showControls();
     }
     updateButtonVisibilities();
-  }
-
-  @Override
-  public void onRepeatModeChanged(int repeatMode) {
-    // Do nothing.
   }
 
   @Override

@@ -103,12 +103,15 @@ import java.io.IOException;
     switch (state) {
       case STATE_READ_HEADERS:
         return readHeaders(input);
+
       case STATE_SKIP_HEADERS:
         input.skipFully((int) payloadStartPosition);
         state = STATE_READ_PAYLOAD;
         return Extractor.RESULT_CONTINUE;
+
       case STATE_READ_PAYLOAD:
         return readPayload(input, seekPosition);
+
       default:
         // Never happens.
         throw new IllegalStateException();
@@ -149,8 +152,6 @@ import java.io.IOException;
 
     setupData = null;
     state = STATE_READ_PAYLOAD;
-    // First payload packet. Trim the payload array of the ogg packet after headers have been read.
-    oggPacket.trimPayload();
     return Extractor.RESULT_CONTINUE;
   }
 

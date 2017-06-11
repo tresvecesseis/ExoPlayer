@@ -40,11 +40,13 @@ public final class DefaultDataSource implements DataSource {
 
   private static final String SCHEME_ASSET = "asset";
   private static final String SCHEME_CONTENT = "content";
+  private static final String SCHEME_UDP = "udp";
 
   private final DataSource baseDataSource;
   private final DataSource fileDataSource;
   private final DataSource assetDataSource;
   private final DataSource contentDataSource;
+  private final DataSource udpDataSource;
 
   private DataSource dataSource;
 
@@ -99,6 +101,7 @@ public final class DefaultDataSource implements DataSource {
     this.fileDataSource = new FileDataSource(listener);
     this.assetDataSource = new AssetDataSource(context, listener);
     this.contentDataSource = new ContentDataSource(context, listener);
+    this.udpDataSource = new UdpDataSource(listener);
   }
 
   @Override
@@ -116,6 +119,8 @@ public final class DefaultDataSource implements DataSource {
       dataSource = assetDataSource;
     } else if (SCHEME_CONTENT.equals(scheme)) {
       dataSource = contentDataSource;
+    } else if (SCHEME_UDP.equals(scheme)) {
+      dataSource = udpDataSource;
     } else {
       dataSource = baseDataSource;
     }

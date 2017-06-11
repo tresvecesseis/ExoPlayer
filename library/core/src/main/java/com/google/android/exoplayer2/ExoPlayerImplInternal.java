@@ -112,7 +112,6 @@ import java.io.IOException;
   private static final int MSG_SOURCE_CONTINUE_LOADING_REQUESTED = 9;
   private static final int MSG_TRACK_SELECTION_INVALIDATED = 10;
   private static final int MSG_CUSTOM = 11;
-  private static final int MSG_SET_REPEAT_MODE = 12;
 
   private static final int PREPARING_SOURCE_INTERVAL_MS = 10;
   private static final int RENDERING_INTERVAL_MS = 10;
@@ -156,7 +155,6 @@ import java.io.IOException;
   private boolean rebuffering;
   private boolean isLoading;
   private int state;
-  private @ExoPlayer.RepeatMode int repeatMode;
   private int customMessagesSent;
   private int customMessagesProcessed;
   private long elapsedRealtimeUs;
@@ -172,13 +170,12 @@ import java.io.IOException;
   private Timeline timeline;
 
   public ExoPlayerImplInternal(Renderer[] renderers, TrackSelector trackSelector,
-      LoadControl loadControl, boolean playWhenReady, @ExoPlayer.RepeatMode int repeatMode,
-      Handler eventHandler, PlaybackInfo playbackInfo, ExoPlayer player) {
+      LoadControl loadControl, boolean playWhenReady, Handler eventHandler,
+      PlaybackInfo playbackInfo, ExoPlayer player) {
     this.renderers = renderers;
     this.trackSelector = trackSelector;
     this.loadControl = loadControl;
     this.playWhenReady = playWhenReady;
-    this.repeatMode = repeatMode;
     this.eventHandler = eventHandler;
     this.state = ExoPlayer.STATE_IDLE;
     this.playbackInfo = playbackInfo;
@@ -211,10 +208,6 @@ import java.io.IOException;
 
   public void setPlayWhenReady(boolean playWhenReady) {
     handler.obtainMessage(MSG_SET_PLAY_WHEN_READY, playWhenReady ? 1 : 0, 0).sendToTarget();
-  }
-
-  public void setRepeatMode(@ExoPlayer.RepeatMode int repeatMode) {
-    handler.obtainMessage(MSG_SET_REPEAT_MODE, repeatMode, 0).sendToTarget();
   }
 
   public void seekTo(Timeline timeline, int windowIndex, long positionUs) {
@@ -309,10 +302,6 @@ import java.io.IOException;
         }
         case MSG_SET_PLAY_WHEN_READY: {
           setPlayWhenReadyInternal(msg.arg1 != 0);
-          return true;
-        }
-        case MSG_SET_REPEAT_MODE: {
-          setRepeatModeInternal(msg.arg1);
           return true;
         }
         case MSG_DO_SOME_WORK: {
@@ -419,51 +408,6 @@ import java.io.IOException;
       } else if (state == ExoPlayer.STATE_BUFFERING) {
         handler.sendEmptyMessage(MSG_DO_SOME_WORK);
       }
-    }
-  }
-
-  private void setRepeatModeInternal(@ExoPlayer.RepeatMode int repeatMode)
-      throws ExoPlaybackException {
-    this.repeatMode = repeatMode;
-    // Check if all existing period holders match the new period order.
-    MediaPeriodHolder lastValidPeriodHolder = playingPeriodHolder != null
-        ? playingPeriodHolder : loadingPeriodHolder;
-    if (lastValidPeriodHolder == null) {
-      return;
-    }
-    boolean seenReadingPeriodHolder = lastValidPeriodHolder == readingPeriodHolder;
-    boolean seenLoadingPeriodHolder = lastValidPeriodHolder == loadingPeriodHolder;
-    int nextPeriodIndex = timeline.getNextPeriodIndex(lastValidPeriodHolder.index, period, window,
-        repeatMode);
-    while (lastValidPeriodHolder.next != null && nextPeriodIndex != C.INDEX_UNSET
-        && lastValidPeriodHolder.next.index == nextPeriodIndex) {
-      lastValidPeriodHolder = lastValidPeriodHolder.next;
-      seenReadingPeriodHolder |= lastValidPeriodHolder == readingPeriodHolder;
-      seenLoadingPeriodHolder |= lastValidPeriodHolder == loadingPeriodHolder;
-      nextPeriodIndex = timeline.getNextPeriodIndex(lastValidPeriodHolder.index, period, window,
-          repeatMode);
-    }
-    // Release all period holder beyond the last one matching the new period order.
-    if (lastValidPeriodHolder.next != null) {
-      releasePeriodHoldersFrom(lastValidPeriodHolder.next);
-      lastValidPeriodHolder.next = null;
-    }
-    // Update isLast flag.
-    lastValidPeriodHolder.isLast = isLastPeriod(lastValidPeriodHolder.index);
-    // Handle cases where loadingPeriodHolder or readingPeriodHolder have been removed.
-    if (!seenLoadingPeriodHolder) {
-      loadingPeriodHolder = lastValidPeriodHolder;
-    }
-    if (!seenReadingPeriodHolder && playingPeriodHolder != null) {
-      // Renderers may have read from a period that's been removed. Seek back to the current
-      // position of the playing period to make sure none of the removed period is played.
-      int playingPeriodIndex = playingPeriodHolder.index;
-      long newPositionUs = seekToPeriodPosition(playingPeriodIndex, playbackInfo.positionUs);
-      playbackInfo = new PlaybackInfo(playingPeriodIndex, newPositionUs);
-    }
-    // Restart buffering if playback has ended and repetition is enabled.
-    if (state == ExoPlayer.STATE_ENDED && repeatMode != ExoPlayer.REPEAT_MODE_OFF) {
-      setState(ExoPlayer.STATE_BUFFERING);
     }
   }
 
@@ -1004,7 +948,10 @@ import java.io.IOException;
     }
 
     // The current period is in the new timeline. Update the holder and playbackInfo.
-    periodHolder.setIndex(periodIndex, isLastPeriod(periodIndex));
+    timeline.getPeriod(periodIndex, period);
+    boolean isLastPeriod = periodIndex == timeline.getPeriodCount() - 1
+        && !timeline.getWindow(period.windowIndex, window).isDynamic;
+    periodHolder.setIndex(periodIndex, isLastPeriod);
     boolean seenReadingPeriod = periodHolder == readingPeriodHolder;
     if (periodIndex != playbackInfo.periodIndex) {
       playbackInfo = playbackInfo.copyWithPeriodIndex(periodIndex);
@@ -1015,11 +962,13 @@ import java.io.IOException;
     while (periodHolder.next != null) {
       MediaPeriodHolder previousPeriodHolder = periodHolder;
       periodHolder = periodHolder.next;
-      periodIndex = timeline.getNextPeriodIndex(periodIndex, period, window, repeatMode);
-      if (periodIndex != C.INDEX_UNSET
-          && periodHolder.uid.equals(timeline.getPeriod(periodIndex, period, true).uid)) {
+      periodIndex++;
+      timeline.getPeriod(periodIndex, period, true);
+      isLastPeriod = periodIndex == timeline.getPeriodCount() - 1
+          && !timeline.getWindow(period.windowIndex, window).isDynamic;
+      if (periodHolder.uid.equals(period.uid)) {
         // The holder is consistent with the new timeline. Update its index and continue.
-        periodHolder.setIndex(periodIndex, isLastPeriod(periodIndex));
+        periodHolder.setIndex(periodIndex, isLastPeriod);
         seenReadingPeriod |= (periodHolder == readingPeriodHolder);
       } else {
         // The holder is inconsistent with the new timeline.
@@ -1074,19 +1023,11 @@ import java.io.IOException;
   private int resolveSubsequentPeriod(int oldPeriodIndex, Timeline oldTimeline,
       Timeline newTimeline) {
     int newPeriodIndex = C.INDEX_UNSET;
-    int maxIterations = oldTimeline.getPeriodCount();
-    for (int i = 0; i < maxIterations && newPeriodIndex == C.INDEX_UNSET; i++) {
-      oldPeriodIndex = oldTimeline.getNextPeriodIndex(oldPeriodIndex, period, window, repeatMode);
+    while (newPeriodIndex == C.INDEX_UNSET && oldPeriodIndex < oldTimeline.getPeriodCount() - 1) {
       newPeriodIndex = newTimeline.getIndexOfPeriod(
-          oldTimeline.getPeriod(oldPeriodIndex, period, true).uid);
+          oldTimeline.getPeriod(++oldPeriodIndex, period, true).uid);
     }
     return newPeriodIndex;
-  }
-
-  private boolean isLastPeriod(int periodIndex) {
-    int windowIndex = timeline.getPeriod(periodIndex, period).windowIndex;
-    return !timeline.getWindow(windowIndex, window).isDynamic
-        && timeline.isLastPeriod(periodIndex, period, window, repeatMode);
   }
 
   /**
@@ -1299,8 +1240,7 @@ import java.io.IOException;
         // We are already buffering the maximum number of periods ahead.
         return;
       }
-      newLoadingPeriodIndex = timeline.getNextPeriodIndex(loadingPeriodIndex, period, window,
-          repeatMode);
+      newLoadingPeriodIndex = loadingPeriodHolder.index + 1;
     }
 
     if (newLoadingPeriodIndex >= timeline.getPeriodCount()) {
@@ -1343,8 +1283,9 @@ import java.io.IOException;
         ? newLoadingPeriodStartPositionUs + RENDERER_TIMESTAMP_OFFSET_US
         : (loadingPeriodHolder.getRendererOffset()
             + timeline.getPeriod(loadingPeriodHolder.index, period).getDurationUs());
-    boolean isLastPeriod = isLastPeriod(newLoadingPeriodIndex);
     timeline.getPeriod(newLoadingPeriodIndex, period, true);
+    boolean isLastPeriod = newLoadingPeriodIndex == timeline.getPeriodCount() - 1
+        && !timeline.getWindow(period.windowIndex, window).isDynamic;
     MediaPeriodHolder newPeriodHolder = new MediaPeriodHolder(renderers, rendererCapabilities,
         rendererPositionOffsetUs, trackSelector, loadControl, mediaSource, period.uid,
         newLoadingPeriodIndex, isLastPeriod, newLoadingPeriodStartPositionUs);

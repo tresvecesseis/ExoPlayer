@@ -134,8 +134,7 @@ public class DashManifest {
       } while(key.periodIndex == periodIndex && key.adaptationSetIndex == adaptationSetIndex);
 
       copyAdaptationSets.add(new AdaptationSet(adaptationSet.id, adaptationSet.type,
-          copyRepresentations, adaptationSet.accessibilityDescriptors,
-          adaptationSet.supplementalProperties));
+          copyRepresentations, adaptationSet.accessibilityDescriptors));
     } while(key.periodIndex == periodIndex);
     // Add back the last key which doesn't belong to the period being processed
     keys.addFirst(key);

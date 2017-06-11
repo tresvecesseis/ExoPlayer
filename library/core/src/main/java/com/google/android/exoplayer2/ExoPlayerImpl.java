@@ -51,7 +51,6 @@ import java.util.concurrent.CopyOnWriteArraySet;
 
   private boolean tracksSelected;
   private boolean playWhenReady;
-  private @RepeatMode int repeatMode;
   private int playbackState;
   private int pendingSeekAcks;
   private int pendingPrepareAcks;
@@ -84,7 +83,6 @@ import java.util.concurrent.CopyOnWriteArraySet;
     this.renderers = Assertions.checkNotNull(renderers);
     this.trackSelector = Assertions.checkNotNull(trackSelector);
     this.playWhenReady = false;
-    this.repeatMode = REPEAT_MODE_OFF;
     this.playbackState = STATE_IDLE;
     this.listeners = new CopyOnWriteArraySet<>();
     emptyTrackSelections = new TrackSelectionArray(new TrackSelection[renderers.length]);
@@ -94,8 +92,7 @@ import java.util.concurrent.CopyOnWriteArraySet;
     trackGroups = TrackGroupArray.EMPTY;
     trackSelections = emptyTrackSelections;
     playbackParameters = PlaybackParameters.DEFAULT;
-    Looper eventLooper = Looper.myLooper() != null ? Looper.myLooper() : Looper.getMainLooper();
-    eventHandler = new Handler(eventLooper) {
+    eventHandler = new Handler() {
       @Override
       public void handleMessage(Message msg) {
         ExoPlayerImpl.this.handleEvent(msg);
@@ -103,7 +100,7 @@ import java.util.concurrent.CopyOnWriteArraySet;
     };
     playbackInfo = new ExoPlayerImplInternal.PlaybackInfo(0, 0);
     internalPlayer = new ExoPlayerImplInternal(renderers, trackSelector, loadControl, playWhenReady,
-        repeatMode, eventHandler, playbackInfo, this);
+        eventHandler, playbackInfo, this);
   }
 
   @Override
@@ -167,22 +164,6 @@ import java.util.concurrent.CopyOnWriteArraySet;
   }
 
   @Override
-  public void setRepeatMode(@RepeatMode int repeatMode) {
-    if (this.repeatMode != repeatMode) {
-      this.repeatMode = repeatMode;
-      internalPlayer.setRepeatMode(repeatMode);
-      for (EventListener listener : listeners) {
-        listener.onRepeatModeChanged(repeatMode);
-      }
-    }
-  }
-
-  @Override
-  public @RepeatMode int getRepeatMode() {
-    return repeatMode;
-  }
-
-  @Override
   public boolean isLoading() {
     return isLoading;
   }
@@ -213,10 +194,10 @@ import java.util.concurrent.CopyOnWriteArraySet;
       maskingPeriodIndex = 0;
     } else {
       timeline.getWindow(windowIndex, window);
-      long resolvedPositionUs =
-          positionMs == C.TIME_UNSET ? window.getDefaultPositionUs() : C.msToUs(positionMs);
+      long resolvedPositionMs =
+          positionMs == C.TIME_UNSET ? window.getDefaultPositionUs() : positionMs;
       int periodIndex = window.firstPeriodIndex;
-      long periodPositionUs = window.getPositionInFirstPeriodUs() + resolvedPositionUs;
+      long periodPositionUs = window.getPositionInFirstPeriodUs() + C.msToUs(resolvedPositionMs);
       long periodDurationUs = timeline.getPeriod(periodIndex, period).getDurationUs();
       while (periodDurationUs != C.TIME_UNSET && periodPositionUs >= periodDurationUs
           && periodIndex < window.lastPeriodIndex) {
@@ -323,10 +304,10 @@ import java.util.concurrent.CopyOnWriteArraySet;
     if (timeline.isEmpty()) {
       return 0;
     }
-    long position = getBufferedPosition();
+    long bufferedPosition = getBufferedPosition();
     long duration = getDuration();
-    return position == C.TIME_UNSET || duration == C.TIME_UNSET ? 0
-        : (duration == 0 ? 100 : Util.constrainValue((int) ((position * 100) / duration), 0, 100));
+    return (bufferedPosition == C.TIME_UNSET || duration == C.TIME_UNSET) ? 0
+        : (int) (duration == 0 ? 100 : (bufferedPosition * 100) / duration);
   }
 
   @Override

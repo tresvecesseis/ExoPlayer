@@ -28,7 +28,7 @@ import java.net.SocketException;
 /**
  * A UDP {@link DataSource}.
  */
-public final class UdpDataSource implements DataSource {
+public final class UdpDataSource implements DataSinkSource {
 
   /**
    * Thrown when an error is encountered when trying to read from a {@link UdpDataSource}.
@@ -62,6 +62,7 @@ public final class UdpDataSource implements DataSource {
   private InetAddress address;
   private InetSocketAddress socketAddress;
   private boolean opened;
+  private boolean autoBinding;
 
   private int packetRemaining;
 
@@ -74,10 +75,28 @@ public final class UdpDataSource implements DataSource {
 
   /**
    * @param listener An optional listener.
+   * @param autoBinding The auto-binding flag indicator.
+   */
+  public UdpDataSource(TransferListener<? super UdpDataSource> listener, boolean autoBinding) {
+    this(listener, DEFAULT_MAX_PACKET_SIZE, autoBinding);
+  }
+
+  /**
+   * @param listener An optional listener.
    * @param maxPacketSize The maximum datagram packet size, in bytes.
    */
   public UdpDataSource(TransferListener<? super UdpDataSource> listener, int maxPacketSize) {
-    this(listener, maxPacketSize, DEAFULT_SOCKET_TIMEOUT_MILLIS);
+    this(listener, maxPacketSize, DEAFULT_SOCKET_TIMEOUT_MILLIS, true);
+  }
+
+  /**
+   * @param listener An optional listener.
+   * @param maxPacketSize The maximum datagram packet size, in bytes.
+   * @param autoBinding The auto-binding flag indicator.
+   */
+  public UdpDataSource(TransferListener<? super UdpDataSource> listener, int maxPacketSize,
+      boolean autoBinding) {
+    this(listener, maxPacketSize, DEAFULT_SOCKET_TIMEOUT_MILLIS, autoBinding);
   }
 
   /**
@@ -85,11 +104,13 @@ public final class UdpDataSource implements DataSource {
    * @param maxPacketSize The maximum datagram packet size, in bytes.
    * @param socketTimeoutMillis The socket timeout in milliseconds. A timeout of zero is interpreted
    *     as an infinite timeout.
+   * @param autoBinding The auto-binding flag indicator.
    */
   public UdpDataSource(TransferListener<? super UdpDataSource> listener, int maxPacketSize,
-      int socketTimeoutMillis) {
+      int socketTimeoutMillis, boolean autoBinding) {
     this.listener = listener;
     this.socketTimeoutMillis = socketTimeoutMillis;
+    this.autoBinding = autoBinding;
     packetBuffer = new byte[maxPacketSize];
     packet = new DatagramPacket(packetBuffer, 0, maxPacketSize);
   }
@@ -108,7 +129,12 @@ public final class UdpDataSource implements DataSource {
         multicastSocket.joinGroup(address);
         socket = multicastSocket;
       } else {
-        socket = new DatagramSocket(socketAddress);
+        if (autoBinding) {
+          socket = new DatagramSocket(socketAddress);
+        } else {
+          socket = new DatagramSocket();
+          socket.connect(socketAddress);
+        }
       }
     } catch (IOException e) {
       throw new UdpDataSourceException(e);
@@ -151,6 +177,20 @@ public final class UdpDataSource implements DataSource {
     System.arraycopy(packetBuffer, packetOffset, buffer, offset, bytesToRead);
     packetRemaining -= bytesToRead;
     return bytesToRead;
+  }
+
+  @Override
+  public void write(byte[] buffer, int offset, int readLength) throws UdpDataSourceException {
+    if (readLength == 0) {
+      return;
+    }
+
+    // We've write all of the data from the buffer.
+    try {
+      socket.send(new DatagramPacket(buffer, offset, readLength));
+    } catch (IOException e) {
+      throw new UdpDataSourceException(e);
+    }
   }
 
   @Override

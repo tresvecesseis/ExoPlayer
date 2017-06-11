@@ -71,7 +71,7 @@ public final class LibvpxVideoRenderer extends BaseRenderer {
   private DecoderCounters decoderCounters;
   private Format format;
   private VpxDecoder decoder;
-  private VpxInputBuffer inputBuffer;
+  private DecoderInputBuffer inputBuffer;
   private VpxOutputBuffer outputBuffer;
   private VpxOutputBuffer nextOutputBuffer;
   private DrmSession<ExoMediaCrypto> drmSession;
@@ -255,7 +255,7 @@ public final class LibvpxVideoRenderer extends BaseRenderer {
 
     if (outputMode == VpxDecoder.OUTPUT_MODE_NONE) {
       // Skip frames in sync with playback, so we'll be at the right frame if the mode changes.
-      if (isBufferLate(outputBuffer.timeUs - positionUs)) {
+      if (outputBuffer.timeUs <= positionUs) {
         skipBuffer();
         return true;
       }
@@ -280,20 +280,23 @@ public final class LibvpxVideoRenderer extends BaseRenderer {
     return false;
   }
 
+
   /**
    * Returns whether the current frame should be dropped.
    *
    * @param outputBufferTimeUs The timestamp of the current output buffer.
    * @param nextOutputBufferTimeUs The timestamp of the next output buffer or
-   *     {@link C#TIME_UNSET} if the next output buffer is unavailable.
+   *     {@link TIME_UNSET} if the next output buffer is unavailable.
    * @param positionUs The current playback position.
    * @param joiningDeadlineMs The joining deadline.
    * @return Returns whether to drop the current output buffer.
    */
   protected boolean shouldDropOutputBuffer(long outputBufferTimeUs, long nextOutputBufferTimeUs,
       long positionUs, long joiningDeadlineMs) {
-    return isBufferLate(outputBufferTimeUs - positionUs)
-        && (joiningDeadlineMs != C.TIME_UNSET || nextOutputBufferTimeUs != C.TIME_UNSET);
+     // Drop the frame if we're joining and are more than 30ms late, or if we have the next frame
+     // and that's also late. Else we'll render what we have.
+    return (joiningDeadlineMs != C.TIME_UNSET && outputBufferTimeUs < positionUs - 30000)
+        || (nextOutputBufferTimeUs != C.TIME_UNSET && nextOutputBufferTimeUs < positionUs);
   }
 
   private void renderBuffer() {
@@ -391,7 +394,6 @@ public final class LibvpxVideoRenderer extends BaseRenderer {
       return false;
     }
     inputBuffer.flip();
-    inputBuffer.colorInfo = formatHolder.format.colorInfo;
     decoder.queueInputBuffer(inputBuffer);
     decoderCounters.inputBufferCount++;
     inputBuffer = null;
@@ -650,11 +652,6 @@ public final class LibvpxVideoRenderer extends BaseRenderer {
       droppedFrames = 0;
       droppedFrameAccumulationStartTimeMs = now;
     }
-  }
-
-  private static boolean isBufferLate(long earlyUs) {
-    // Class a buffer as late if it should have been presented more than 30ms ago.
-    return earlyUs < -30000;
   }
 
 }

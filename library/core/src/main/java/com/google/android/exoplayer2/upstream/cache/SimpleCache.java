@@ -110,8 +110,7 @@ public final class SimpleCache implements Cache {
   @Override
   public synchronized NavigableSet<CacheSpan> getCachedSpans(String key) {
     CachedContent cachedContent = index.get(key);
-    return cachedContent == null || cachedContent.isEmpty() ? null
-        : new TreeSet<CacheSpan>(cachedContent.getSpans());
+    return cachedContent == null ? null : new TreeSet<CacheSpan>(cachedContent.getSpans());
   }
 
   @Override
@@ -287,9 +286,7 @@ public final class SimpleCache implements Cache {
 
   private void removeSpan(CacheSpan span, boolean removeEmptyCachedContent) throws CacheException {
     CachedContent cachedContent = index.get(span.key);
-    if (cachedContent == null || !cachedContent.removeSpan(span)) {
-      return;
-    }
+    Assertions.checkState(cachedContent.removeSpan(span));
     totalSpace -= span.length;
     if (removeEmptyCachedContent && cachedContent.isEmpty()) {
       index.removeEmpty(cachedContent.key);

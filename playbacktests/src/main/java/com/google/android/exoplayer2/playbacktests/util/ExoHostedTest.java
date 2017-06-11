@@ -76,7 +76,6 @@ public abstract class ExoHostedTest implements HostedTest, ExoPlayer.EventListen
   private Handler actionHandler;
   private MappingTrackSelector trackSelector;
   private SimpleExoPlayer player;
-  private Surface surface;
   private ExoPlaybackException playerError;
   private boolean playerWasPrepared;
   private boolean playerFinished;
@@ -125,7 +124,7 @@ public abstract class ExoHostedTest implements HostedTest, ExoPlayer.EventListen
     if (player == null) {
       pendingSchedule = schedule;
     } else {
-      schedule.start(player, trackSelector, surface, actionHandler);
+      schedule.start(player, trackSelector, actionHandler);
     }
   }
 
@@ -133,7 +132,6 @@ public abstract class ExoHostedTest implements HostedTest, ExoPlayer.EventListen
 
   @Override
   public final void onStart(HostActivity host, Surface surface) {
-    this.surface = surface;
     // Build the player.
     DefaultBandwidthMeter bandwidthMeter = new DefaultBandwidthMeter();
     trackSelector = buildTrackSelector(host, bandwidthMeter);
@@ -148,7 +146,7 @@ public abstract class ExoHostedTest implements HostedTest, ExoPlayer.EventListen
     actionHandler = new Handler();
     // Schedule any pending actions.
     if (pendingSchedule != null) {
-      pendingSchedule.start(player, trackSelector, surface, actionHandler);
+      pendingSchedule.start(player, trackSelector, actionHandler);
       pendingSchedule = null;
     }
   }
@@ -213,11 +211,6 @@ public abstract class ExoHostedTest implements HostedTest, ExoPlayer.EventListen
       totalPlayingTimeMs += SystemClock.elapsedRealtime() - lastPlayingStartTimeMs;
     }
     this.playing = playing;
-  }
-
-  @Override
-  public void onRepeatModeChanged(int repeatMode) {
-    // Do nothing.
   }
 
   @Override

@@ -61,21 +61,22 @@ public class DefaultTimeBar extends View implements TimeBar {
   private static final int DEFAULT_INCREMENT_COUNT = 20;
   private static final int DEFAULT_BAR_HEIGHT = 4;
   private static final int DEFAULT_TOUCH_TARGET_HEIGHT = 26;
-  private static final int DEFAULT_PLAYED_COLOR = 0xFFFFFFFF;
+  private static final int DEFAULT_PLAYED_COLOR = 0x33FFFFFF;
+  private static final int DEFAULT_BUFFERED_COLOR = 0xCCFFFFFF;
   private static final int DEFAULT_AD_MARKER_COLOR = 0xB2FFFF00;
   private static final int DEFAULT_AD_MARKER_WIDTH = 4;
   private static final int DEFAULT_SCRUBBER_ENABLED_SIZE = 12;
   private static final int DEFAULT_SCRUBBER_DISABLED_SIZE = 0;
   private static final int DEFAULT_SCRUBBER_DRAGGED_SIZE = 16;
+  private static final int OPAQUE_COLOR = 0xFF000000;
 
   private final Rect seekBounds;
   private final Rect progressBar;
   private final Rect bufferedBar;
   private final Rect scrubberBar;
-  private final Paint playedPaint;
-  private final Paint scrubberPaint;
+  private final Paint progressPaint;
   private final Paint bufferedPaint;
-  private final Paint unplayedPaint;
+  private final Paint scrubberPaint;
   private final Paint adMarkerPaint;
   private final int barHeight;
   private final int touchTargetHeight;
@@ -114,10 +115,9 @@ public class DefaultTimeBar extends View implements TimeBar {
     progressBar = new Rect();
     bufferedBar = new Rect();
     scrubberBar = new Rect();
-    playedPaint = new Paint();
-    scrubberPaint = new Paint();
+    progressPaint = new Paint();
     bufferedPaint = new Paint();
-    unplayedPaint = new Paint();
+    scrubberPaint = new Paint();
     adMarkerPaint = new Paint();
 
     // Calculate the dimensions and paints for drawn elements.
@@ -147,18 +147,13 @@ public class DefaultTimeBar extends View implements TimeBar {
         scrubberDraggedSize = a.getDimensionPixelSize(
             R.styleable.DefaultTimeBar_scrubber_dragged_size, defaultScrubberDraggedSize);
         int playedColor = a.getInt(R.styleable.DefaultTimeBar_played_color, DEFAULT_PLAYED_COLOR);
-        int scrubberColor = a.getInt(R.styleable.DefaultTimeBar_scrubber_color,
-            getDefaultScrubberColor(playedColor));
         int bufferedColor = a.getInt(R.styleable.DefaultTimeBar_buffered_color,
-            getDefaultBufferedColor(playedColor));
-        int unplayedColor = a.getInt(R.styleable.DefaultTimeBar_unplayed_color,
-            getDefaultUnplayedColor(playedColor));
+            DEFAULT_BUFFERED_COLOR);
         int adMarkerColor = a.getInt(R.styleable.DefaultTimeBar_ad_marker_color,
             DEFAULT_AD_MARKER_COLOR);
-        playedPaint.setColor(playedColor);
-        scrubberPaint.setColor(scrubberColor);
+        progressPaint.setColor(playedColor);
+        scrubberPaint.setColor(OPAQUE_COLOR | playedColor);
         bufferedPaint.setColor(bufferedColor);
-        unplayedPaint.setColor(unplayedColor);
         adMarkerPaint.setColor(adMarkerColor);
       } finally {
         a.recycle();
@@ -170,10 +165,9 @@ public class DefaultTimeBar extends View implements TimeBar {
       scrubberEnabledSize = defaultScrubberEnabledSize;
       scrubberDisabledSize = defaultScrubberDisabledSize;
       scrubberDraggedSize = defaultScrubberDraggedSize;
-      playedPaint.setColor(DEFAULT_PLAYED_COLOR);
-      scrubberPaint.setColor(getDefaultScrubberColor(DEFAULT_PLAYED_COLOR));
-      bufferedPaint.setColor(getDefaultBufferedColor(DEFAULT_PLAYED_COLOR));
-      unplayedPaint.setColor(getDefaultUnplayedColor(DEFAULT_PLAYED_COLOR));
+      scrubberPaint.setColor(OPAQUE_COLOR | DEFAULT_PLAYED_COLOR);
+      progressPaint.setColor(DEFAULT_PLAYED_COLOR);
+      bufferedPaint.setColor(DEFAULT_BUFFERED_COLOR);
       adMarkerPaint.setColor(DEFAULT_AD_MARKER_COLOR);
     }
     formatBuilder = new StringBuilder();
@@ -220,13 +214,11 @@ public class DefaultTimeBar extends View implements TimeBar {
   public void setPosition(long position) {
     this.position = position;
     setContentDescription(getProgressText());
-    update();
   }
 
   @Override
   public void setBufferedPosition(long bufferedPosition) {
     this.bufferedPosition = bufferedPosition;
-    update();
   }
 
   @Override
@@ -237,7 +229,6 @@ public class DefaultTimeBar extends View implements TimeBar {
     } else {
       updateScrubberState();
     }
-    update();
   }
 
   @Override
@@ -245,7 +236,6 @@ public class DefaultTimeBar extends View implements TimeBar {
     Assertions.checkArgument(adBreakCount == 0 || adBreakTimesMs != null);
     this.adBreakCount = adBreakCount;
     this.adBreakTimesMs = adBreakTimesMs;
-    update();
   }
 
   @Override
@@ -347,18 +337,16 @@ public class DefaultTimeBar extends View implements TimeBar {
 
   @Override
   protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-    int heightMode = MeasureSpec.getMode(heightMeasureSpec);
-    int heightSize = MeasureSpec.getSize(heightMeasureSpec);
-    int height = heightMode == MeasureSpec.UNSPECIFIED ? touchTargetHeight
-        : heightMode == MeasureSpec.EXACTLY ? heightSize : Math.min(touchTargetHeight, heightSize);
-    setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), height);
+    int measureWidth = MeasureSpec.getSize(widthMeasureSpec);
+    int measureHeight = MeasureSpec.getSize(heightMeasureSpec);
+    setMeasuredDimension(measureWidth, measureHeight);
   }
 
   @Override
   protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
     int width = right - left;
     int height = bottom - top;
-    int barY = (height - touchTargetHeight) / 2;
+    int barY = height - touchTargetHeight;
     int seekLeft = getPaddingLeft();
     int seekRight = width - getPaddingRight();
     int progressY = barY + (touchTargetHeight - barHeight) / 2;
@@ -442,7 +430,7 @@ public class DefaultTimeBar extends View implements TimeBar {
       parent.requestDisallowInterceptTouchEvent(true);
     }
     if (listener != null) {
-      listener.onScrubStart(this, getScrubberPosition());
+      listener.onScrubStart(this);
     }
   }
 
@@ -469,10 +457,12 @@ public class DefaultTimeBar extends View implements TimeBar {
     scrubberBar.set(progressBar);
     long newScrubberTime = scrubbing ? scrubPosition : position;
     if (duration > 0) {
-      int bufferedPixelWidth = (int) ((progressBar.width() * bufferedPosition) / duration);
-      bufferedBar.right = Math.min(progressBar.left + bufferedPixelWidth, progressBar.right);
-      int scrubberPixelPosition = (int) ((progressBar.width() * newScrubberTime) / duration);
-      scrubberBar.right = Math.min(progressBar.left + scrubberPixelPosition, progressBar.right);
+      int bufferedPixelWidth =
+          (int) ((progressBar.width() * bufferedPosition) / duration);
+      bufferedBar.right = progressBar.left + bufferedPixelWidth;
+      int scrubberPixelPosition =
+          (int) ((progressBar.width() * newScrubberTime) / duration);
+      scrubberBar.right = progressBar.left + scrubberPixelPosition;
     } else {
       bufferedBar.right = progressBar.left;
       scrubberBar.right = progressBar.left;
@@ -512,21 +502,21 @@ public class DefaultTimeBar extends View implements TimeBar {
     int barTop = progressBar.centerY() - progressBarHeight / 2;
     int barBottom = barTop + progressBarHeight;
     if (duration <= 0) {
-      canvas.drawRect(progressBar.left, barTop, progressBar.right, barBottom, unplayedPaint);
+      canvas.drawRect(progressBar.left, barTop, progressBar.right, barBottom, progressPaint);
       return;
     }
     int bufferedLeft = bufferedBar.left;
     int bufferedRight = bufferedBar.right;
     int progressLeft = Math.max(Math.max(progressBar.left, bufferedRight), scrubberBar.right);
     if (progressLeft < progressBar.right) {
-      canvas.drawRect(progressLeft, barTop, progressBar.right, barBottom, unplayedPaint);
+      canvas.drawRect(progressLeft, barTop, progressBar.right, barBottom, progressPaint);
     }
     bufferedLeft = Math.max(bufferedLeft, scrubberBar.right);
     if (bufferedRight > bufferedLeft) {
       canvas.drawRect(bufferedLeft, barTop, bufferedRight, barBottom, bufferedPaint);
     }
     if (scrubberBar.width() > 0) {
-      canvas.drawRect(scrubberBar.left, barTop, scrubberBar.right, barBottom, playedPaint);
+      canvas.drawRect(scrubberBar.left, barTop, scrubberBar.right, barBottom, scrubberPaint);
     }
     int adMarkerOffset = adMarkerWidth / 2;
     for (int i = 0; i < adBreakCount; i++) {
@@ -585,18 +575,6 @@ public class DefaultTimeBar extends View implements TimeBar {
 
   private static int dpToPx(DisplayMetrics displayMetrics, int dps) {
     return (int) (dps * displayMetrics.density + 0.5f);
-  }
-
-  private static int getDefaultScrubberColor(int playedColor) {
-    return 0xFF000000 | playedColor;
-  }
-
-  private static int getDefaultUnplayedColor(int playedColor) {
-    return 0x33000000 | (playedColor & 0x00FFFFFF);
-  }
-
-  private static int getDefaultBufferedColor(int playedColor) {
-    return 0xCC000000 | (playedColor & 0x00FFFFFF);
   }
 
 }

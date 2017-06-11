@@ -15,6 +15,7 @@ include ':library'
 include ':library-core'
 include ':library-dash'
 include ':library-hls'
+include ':library-iptv'
 include ':library-smoothstreaming'
 include ':library-ui'
 include ':testutils'
@@ -23,7 +24,6 @@ include ':playbacktests'
 include ':extension-ffmpeg'
 include ':extension-flac'
 include ':extension-gvr'
-include ':extension-ima'
 include ':extension-okhttp'
 include ':extension-opus'
 include ':extension-vp9'
@@ -34,12 +34,12 @@ project(':library').projectDir = new File(settingsDir, 'library/all')
 project(':library-core').projectDir = new File(settingsDir, 'library/core')
 project(':library-dash').projectDir = new File(settingsDir, 'library/dash')
 project(':library-hls').projectDir = new File(settingsDir, 'library/hls')
+project(':library-iptv').projectDir = new File(settingsDir, 'library/iptv')
 project(':library-smoothstreaming').projectDir = new File(settingsDir, 'library/smoothstreaming')
 project(':library-ui').projectDir = new File(settingsDir, 'library/ui')
 project(':extension-ffmpeg').projectDir = new File(settingsDir, 'extensions/ffmpeg')
 project(':extension-flac').projectDir = new File(settingsDir, 'extensions/flac')
 project(':extension-gvr').projectDir = new File(settingsDir, 'extensions/gvr')
-project(':extension-ima').projectDir = new File(settingsDir, 'extensions/ima')
 project(':extension-okhttp').projectDir = new File(settingsDir, 'extensions/okhttp')
 project(':extension-opus').projectDir = new File(settingsDir, 'extensions/opus')
 project(':extension-vp9').projectDir = new File(settingsDir, 'extensions/vp9')

@@ -96,11 +96,6 @@ import java.util.Locale;
   }
 
   @Override
-  public void onRepeatModeChanged(@ExoPlayer.RepeatMode int repeatMode) {
-    Log.d(TAG, "repeatMode [" + getRepeatModeString(repeatMode) + "]");
-  }
-
-  @Override
   public void onPositionDiscontinuity() {
     Log.d(TAG, "positionDiscontinuity");
   }
@@ -281,7 +276,7 @@ import java.util.Locale;
   @Override
   public void onVideoSizeChanged(int width, int height, int unappliedRotationDegrees,
       float pixelWidthHeightRatio) {
-    Log.d(TAG, "videoSizeChanged [" + width + ", " + height + "]");
+    // Do nothing.
   }
 
   @Override
@@ -466,16 +461,4 @@ import java.util.Locale;
     return enabled ? "[X]" : "[ ]";
   }
 
-  private static String getRepeatModeString(@ExoPlayer.RepeatMode int repeatMode) {
-    switch (repeatMode) {
-      case ExoPlayer.REPEAT_MODE_OFF:
-        return "OFF";
-      case ExoPlayer.REPEAT_MODE_ONE:
-        return "ONE";
-      case ExoPlayer.REPEAT_MODE_ALL:
-        return "ALL";
-      default:
-        return "?";
-    }
-  }
 }

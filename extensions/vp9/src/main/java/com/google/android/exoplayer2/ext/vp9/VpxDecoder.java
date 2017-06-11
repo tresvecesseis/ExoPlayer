@@ -17,6 +17,7 @@ package com.google.android.exoplayer2.ext.vp9;
 
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.decoder.CryptoInfo;
+import com.google.android.exoplayer2.decoder.DecoderInputBuffer;
 import com.google.android.exoplayer2.decoder.SimpleDecoder;
 import com.google.android.exoplayer2.drm.DecryptionException;
 import com.google.android.exoplayer2.drm.ExoMediaCrypto;
@@ -26,7 +27,7 @@ import java.nio.ByteBuffer;
  * Vpx decoder.
  */
 /* package */ final class VpxDecoder extends
-    SimpleDecoder<VpxInputBuffer, VpxOutputBuffer, VpxDecoderException> {
+    SimpleDecoder<DecoderInputBuffer, VpxOutputBuffer, VpxDecoderException> {
 
   public static final int OUTPUT_MODE_NONE = -1;
   public static final int OUTPUT_MODE_YUV = 0;
@@ -53,7 +54,7 @@ import java.nio.ByteBuffer;
    */
   public VpxDecoder(int numInputBuffers, int numOutputBuffers, int initialInputBufferSize,
       ExoMediaCrypto exoMediaCrypto) throws VpxDecoderException {
-    super(new VpxInputBuffer[numInputBuffers], new VpxOutputBuffer[numOutputBuffers]);
+    super(new DecoderInputBuffer[numInputBuffers], new VpxOutputBuffer[numOutputBuffers]);
     if (!VpxLibrary.isAvailable()) {
       throw new VpxDecoderException("Failed to load decoder native libraries.");
     }
@@ -84,8 +85,8 @@ import java.nio.ByteBuffer;
   }
 
   @Override
-  protected VpxInputBuffer createInputBuffer() {
-    return new VpxInputBuffer();
+  protected DecoderInputBuffer createInputBuffer() {
+    return new DecoderInputBuffer(DecoderInputBuffer.BUFFER_REPLACEMENT_MODE_DIRECT);
   }
 
   @Override
@@ -99,7 +100,7 @@ import java.nio.ByteBuffer;
   }
 
   @Override
-  protected VpxDecoderException decode(VpxInputBuffer inputBuffer, VpxOutputBuffer outputBuffer,
+  protected VpxDecoderException decode(DecoderInputBuffer inputBuffer, VpxOutputBuffer outputBuffer,
       boolean reset) {
     ByteBuffer inputData = inputBuffer.data;
     int inputSize = inputData.limit();
@@ -127,7 +128,6 @@ import java.nio.ByteBuffer;
     } else if (getFrameResult == -1) {
       return new VpxDecoderException("Buffer initialization failed.");
     }
-    outputBuffer.colorInfo = inputBuffer.colorInfo;
     return null;
   }
 

@@ -15,8 +15,6 @@
  */
 package com.google.android.exoplayer2;
 
-import android.os.Looper;
-import android.support.annotation.IntDef;
 import android.support.annotation.Nullable;
 import com.google.android.exoplayer2.audio.MediaCodecAudioRenderer;
 import com.google.android.exoplayer2.metadata.MetadataRenderer;
@@ -32,8 +30,6 @@ import com.google.android.exoplayer2.trackselection.TrackSelectionArray;
 import com.google.android.exoplayer2.trackselection.TrackSelector;
 import com.google.android.exoplayer2.upstream.DataSource;
 import com.google.android.exoplayer2.video.MediaCodecVideoRenderer;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
 
 /**
  * An extensible media player exposing traditional high-level media player functionality, such as
@@ -92,9 +88,7 @@ import java.lang.annotation.RetentionPolicy;
  * thread. The application's main thread is ideal. Accessing an instance from multiple threads is
  * discouraged, however if an application does wish to do this then it may do so provided that it
  * ensures accesses are synchronized.</li>
- * <li>Registered listeners are called on the thread that created the ExoPlayer instance, unless
- * the thread that created the ExoPlayer instance does not have a {@link Looper}. In that case,
- * registered listeners will be called on the application's main thread.</li>
+ * <li>Registered listeners are called on the thread that created the ExoPlayer instance.</li>
  * <li>An internal playback thread is responsible for playback. Injected player components such as
  * Renderers, MediaSources, TrackSelectors and LoadControls are called by the player on this
  * thread.</li>
@@ -119,8 +113,8 @@ public interface ExoPlayer {
      * Called when the timeline and/or manifest has been refreshed.
      * <p>
      * Note that if the timeline has changed then a position discontinuity may also have occurred.
-     * For example, the current period index may have changed as a result of periods being added or
-     * removed from the timeline. This will <em>not</em> be reported via a separate call to
+     * For example the current period index may have changed as a result of periods being added or
+     * removed from the timeline. The will <em>not</em> be reported via a separate call to
      * {@link #onPositionDiscontinuity()}.
      *
      * @param timeline The latest timeline. Never null, but may be empty.
@@ -153,13 +147,6 @@ public interface ExoPlayer {
      *     interface.
      */
     void onPlayerStateChanged(boolean playWhenReady, int playbackState);
-
-    /**
-     * Called when the value of {@link #getRepeatMode()} changes.
-     *
-     * @param repeatMode The {@link RepeatMode} used for playback.
-     */
-    void onRepeatModeChanged(@RepeatMode int repeatMode);
 
     /**
      * Called when an error occurs. The playback state will transition to {@link #STATE_IDLE}
@@ -265,28 +252,8 @@ public interface ExoPlayer {
   int STATE_ENDED = 4;
 
   /**
-   * Repeat modes for playback.
-   */
-  @Retention(RetentionPolicy.SOURCE)
-  @IntDef({REPEAT_MODE_OFF, REPEAT_MODE_ONE, REPEAT_MODE_ALL})
-  public @interface RepeatMode {}
-  /**
-   * Normal playback without repetition.
-   */
-  int REPEAT_MODE_OFF = 0;
-  /**
-   * "Repeat One" mode to repeat the currently playing window infinitely.
-   */
-  int REPEAT_MODE_ONE = 1;
-  /**
-   * "Repeat All" mode to repeat the entire timeline infinitely.
-   */
-  int REPEAT_MODE_ALL = 2;
-
-  /**
    * Register a listener to receive events from the player. The listener's methods will be called on
-   * the thread that was used to construct the player. However, if the thread used to construct the
-   * player does not have a {@link Looper}, then the listener will be called on the main thread.
+   * the thread that was used to construct the player.
    *
    * @param listener The listener to register.
    */
@@ -342,20 +309,6 @@ public interface ExoPlayer {
    * @return Whether playback will proceed when ready.
    */
   boolean getPlayWhenReady();
-
-  /**
-   * Sets the {@link RepeatMode} to be used for playback.
-   *
-   * @param repeatMode A repeat mode.
-   */
-  void setRepeatMode(@RepeatMode int repeatMode);
-
-  /**
-   * Returns the current {@link RepeatMode} used for playback.
-   *
-   * @return The current repeat mode.
-   */
-  @RepeatMode int getRepeatMode();
 
   /**
    * Whether the player is currently loading the source.

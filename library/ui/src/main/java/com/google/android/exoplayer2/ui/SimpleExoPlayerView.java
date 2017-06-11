@@ -592,16 +592,6 @@ public final class SimpleExoPlayerView extends FrameLayout {
   }
 
   /**
-   * Sets which repeat toggle modes are enabled.
-   *
-   * @param repeatToggleModes A set of {@link PlaybackControlView.RepeatToggleModes}.
-   */
-  public void setRepeatToggleModes(@PlaybackControlView.RepeatToggleModes int repeatToggleModes) {
-    Assertions.checkState(controller != null);
-    controller.setRepeatToggleModes(repeatToggleModes);
-  }
-
-  /**
    * Sets whether the time bar should show all windows, as opposed to just the current one.
    *
    * @param showMultiWindowTimeBar Whether to show all windows.
@@ -814,11 +804,6 @@ public final class SimpleExoPlayerView extends FrameLayout {
     @Override
     public void onPlayerStateChanged(boolean playWhenReady, int playbackState) {
       maybeShowController(false);
-    }
-
-    @Override
-    public void onRepeatModeChanged(int repeatMode) {
-      // Do nothing.
     }
 
     @Override

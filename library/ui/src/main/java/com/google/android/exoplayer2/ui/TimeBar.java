@@ -95,9 +95,8 @@ public interface TimeBar {
      * Called when the user starts moving the scrubber.
      *
      * @param timeBar The time bar.
-     * @param position The position of the scrubber, in milliseconds.
      */
-    void onScrubStart(TimeBar timeBar, long position);
+    void onScrubStart(TimeBar timeBar);
 
     /**
      * Called when the user moves the scrubber.

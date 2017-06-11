@@ -16,13 +16,10 @@
 package com.google.android.exoplayer2.playbacktests.util;
 
 import android.os.Handler;
-import android.view.Surface;
-import com.google.android.exoplayer2.SimpleExoPlayer;
-import com.google.android.exoplayer2.playbacktests.util.Action.ClearVideoSurface;
+import com.google.android.exoplayer2.ExoPlayer;
 import com.google.android.exoplayer2.playbacktests.util.Action.Seek;
 import com.google.android.exoplayer2.playbacktests.util.Action.SetPlayWhenReady;
 import com.google.android.exoplayer2.playbacktests.util.Action.SetRendererDisabled;
-import com.google.android.exoplayer2.playbacktests.util.Action.SetVideoSurface;
 import com.google.android.exoplayer2.playbacktests.util.Action.Stop;
 import com.google.android.exoplayer2.trackselection.MappingTrackSelector;
 
@@ -45,12 +42,11 @@ public final class ActionSchedule {
    *
    * @param player The player to which actions should be applied.
    * @param trackSelector The track selector to which actions should be applied.
-   * @param surface The surface to use when applying actions.
    * @param mainHandler A handler associated with the main thread of the host activity.
    */
-  /* package */ void start(SimpleExoPlayer player, MappingTrackSelector trackSelector,
-      Surface surface, Handler mainHandler) {
-    rootNode.schedule(player, trackSelector, surface, mainHandler);
+  /* package */ void start(ExoPlayer player, MappingTrackSelector trackSelector,
+      Handler mainHandler) {
+    rootNode.schedule(player, trackSelector, mainHandler);
   }
 
   /**
@@ -153,24 +149,6 @@ public final class ActionSchedule {
       return apply(new SetRendererDisabled(tag, index, true));
     }
 
-    /**
-     * Schedules a clear video surface action to be executed.
-     *
-     * @return The builder, for convenience.
-     */
-    public Builder clearVideoSurface() {
-      return apply(new ClearVideoSurface(tag));
-    }
-
-    /**
-     * Schedules a set video surface action to be executed.
-     *
-     * @return The builder, for convenience.
-     */
-    public Builder setVideoSurface() {
-      return apply(new SetVideoSurface(tag));
-    }
-
     public ActionSchedule build() {
       return new ActionSchedule(rootNode);
     }
@@ -187,9 +165,8 @@ public final class ActionSchedule {
 
     private ActionNode next;
 
-    private SimpleExoPlayer player;
+    private ExoPlayer player;
     private MappingTrackSelector trackSelector;
-    private Surface surface;
     private Handler mainHandler;
 
     /**
@@ -216,23 +193,21 @@ public final class ActionSchedule {
      *
      * @param player The player to which actions should be applied.
      * @param trackSelector The track selector to which actions should be applied.
-     * @param surface The surface to use when applying actions.
      * @param mainHandler A handler associated with the main thread of the host activity.
      */
-    public void schedule(SimpleExoPlayer player, MappingTrackSelector trackSelector,
-        Surface surface, Handler mainHandler) {
+    public void schedule(ExoPlayer player, MappingTrackSelector trackSelector,
+        Handler mainHandler) {
       this.player = player;
       this.trackSelector = trackSelector;
-      this.surface = surface;
       this.mainHandler = mainHandler;
       mainHandler.postDelayed(this, delayMs);
     }
 
     @Override
     public void run() {
-      action.doAction(player, trackSelector, surface);
+      action.doAction(player, trackSelector);
       if (next != null) {
-        next.schedule(player, trackSelector, surface, mainHandler);
+        next.schedule(player, trackSelector, mainHandler);
       }
     }
 
@@ -248,8 +223,7 @@ public final class ActionSchedule {
     }
 
     @Override
-    protected void doActionImpl(SimpleExoPlayer player, MappingTrackSelector trackSelector,
-        Surface surface) {
+    protected void doActionImpl(ExoPlayer player, MappingTrackSelector trackSelector) {
       // Do nothing.
     }
 

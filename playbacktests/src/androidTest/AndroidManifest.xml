@@ -36,6 +36,7 @@
 
   <instrumentation
       android:targetPackage="com.google.android.exoplayer2.playbacktests"
-      android:name="android.test.InstrumentationTestRunner"/>
+      android:name="android.test.InstrumentationTestRunner"
+      tools:replace="android:targetPackage"/>
 
 </manifest>

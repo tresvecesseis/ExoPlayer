@@ -15,6 +15,8 @@
  */
 package com.google.android.exoplayer2.source;
 
+import android.util.Log;
+import android.util.Pair;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.ExoPlayer;
 import com.google.android.exoplayer2.Timeline;
@@ -23,12 +25,18 @@ import com.google.android.exoplayer2.util.Assertions;
 import java.io.IOException;
 
 /**
- * Loops a {@link MediaSource} a specified number of times.
- * <p>
- * Note: To loop a {@link MediaSource} indefinitely, it is usually better to use
- * {@link ExoPlayer#setRepeatMode(int)}.
+ * Loops a {@link MediaSource}.
  */
 public final class LoopingMediaSource implements MediaSource {
+
+  /**
+   * The maximum number of periods that can be exposed by the source. The value of this constant is
+   * large enough to cause indefinite looping in practice (the total duration of the looping source
+   * will be approximately five years if the duration of each period is one second).
+   */
+  public static final int MAX_EXPOSED_PERIODS = 157680000;
+
+  private static final String TAG = "LoopingMediaSource";
 
   private final MediaSource childSource;
   private final int loopCount;
@@ -36,8 +44,7 @@ public final class LoopingMediaSource implements MediaSource {
   private int childPeriodCount;
 
   /**
-   * Loops the provided source indefinitely. Note that it is usually better to use
-   * {@link ExoPlayer#setRepeatMode(int)}.
+   * Loops the provided source indefinitely.
    *
    * @param childSource The {@link MediaSource} to loop.
    */
@@ -49,7 +56,9 @@ public final class LoopingMediaSource implements MediaSource {
    * Loops the provided source a specified number of times.
    *
    * @param childSource The {@link MediaSource} to loop.
-   * @param loopCount The desired number of loops. Must be strictly positive.
+   * @param loopCount The desired number of loops. Must be strictly positive. The actual number of
+   *     loops will be capped at the maximum that can achieved without causing the number of
+   *     periods exposed by the source to exceed {@link #MAX_EXPOSED_PERIODS}.
    */
   public LoopingMediaSource(MediaSource childSource, int loopCount) {
     Assertions.checkArgument(loopCount > 0);
@@ -63,9 +72,7 @@ public final class LoopingMediaSource implements MediaSource {
       @Override
       public void onSourceInfoRefreshed(Timeline timeline, Object manifest) {
         childPeriodCount = timeline.getPeriodCount();
-        Timeline loopingTimeline = loopCount != Integer.MAX_VALUE
-            ? new LoopingTimeline(timeline, loopCount) : new InfinitelyLoopingTimeline(timeline);
-        listener.onSourceInfoRefreshed(loopingTimeline, manifest);
+        listener.onSourceInfoRefreshed(new LoopingTimeline(timeline, loopCount), manifest);
       }
     });
   }
@@ -77,9 +84,7 @@ public final class LoopingMediaSource implements MediaSource {
 
   @Override
   public MediaPeriod createPeriod(int index, Allocator allocator, long positionUs) {
-    return loopCount != Integer.MAX_VALUE
-        ? childSource.createPeriod(index % childPeriodCount, allocator, positionUs)
-        : childSource.createPeriod(index, allocator, positionUs);
+    return childSource.createPeriod(index % childPeriodCount, allocator, positionUs);
   }
 
   @Override
@@ -92,7 +97,7 @@ public final class LoopingMediaSource implements MediaSource {
     childSource.releaseSource();
   }
 
-  private static final class LoopingTimeline extends AbstractConcatenatedTimeline {
+  private static final class LoopingTimeline extends Timeline {
 
     private final Timeline childTimeline;
     private final int childPeriodCount;
@@ -103,9 +108,17 @@ public final class LoopingMediaSource implements MediaSource {
       this.childTimeline = childTimeline;
       childPeriodCount = childTimeline.getPeriodCount();
       childWindowCount = childTimeline.getWindowCount();
-      this.loopCount = loopCount;
-      Assertions.checkState(loopCount <= Integer.MAX_VALUE / childPeriodCount,
-          "LoopingMediaSource contains too many periods");
+      // This is the maximum number of loops that can be performed without exceeding
+      // MAX_EXPOSED_PERIODS periods.
+      int maxLoopCount = MAX_EXPOSED_PERIODS / childPeriodCount;
+      if (loopCount > maxLoopCount) {
+        if (loopCount != Integer.MAX_VALUE) {
+          Log.w(TAG, "Capped loops to avoid overflow: " + loopCount + " -> " + maxLoopCount);
+        }
+        this.loopCount = maxLoopCount;
+      } else {
+        this.loopCount = loopCount;
+      }
     }
 
     @Override
@@ -114,86 +127,46 @@ public final class LoopingMediaSource implements MediaSource {
     }
 
     @Override
+    public Window getWindow(int windowIndex, Window window, boolean setIds,
+        long defaultPositionProjectionUs) {
+      childTimeline.getWindow(windowIndex % childWindowCount, window, setIds,
+          defaultPositionProjectionUs);
+      int periodIndexOffset = (windowIndex / childWindowCount) * childPeriodCount;
+      window.firstPeriodIndex += periodIndexOffset;
+      window.lastPeriodIndex += periodIndexOffset;
+      return window;
+    }
+
+    @Override
     public int getPeriodCount() {
       return childPeriodCount * loopCount;
     }
 
     @Override
-    protected Timeline getChild(int childIndex) {
-      return childTimeline;
-    }
-
-    @Override
-    protected int getChildCount() {
-      return loopCount;
-    }
-
-    @Override
-    protected int getChildIndexForPeriod(int periodIndex) {
-      return periodIndex / childPeriodCount;
-    }
-
-    @Override
-    protected int getFirstPeriodIndexInChild(int childIndex) {
-      return childIndex * childPeriodCount;
-    }
-
-    @Override
-    protected int getChildIndexForWindow(int windowIndex) {
-      return windowIndex / childWindowCount;
-    }
-
-    @Override
-    protected int getFirstWindowIndexInChild(int childIndex) {
-      return childIndex * childWindowCount;
-    }
-  }
-
-  private static final class InfinitelyLoopingTimeline extends Timeline {
-
-    private final Timeline childTimeline;
-
-    public InfinitelyLoopingTimeline(Timeline childTimeline) {
-      this.childTimeline = childTimeline;
-    }
-
-    @Override
-    public int getWindowCount() {
-      return childTimeline.getWindowCount();
-    }
-
-    @Override
-    public int getNextWindowIndex(int windowIndex, @ExoPlayer.RepeatMode int repeatMode) {
-      int childNextWindowIndex = childTimeline.getNextWindowIndex(windowIndex, repeatMode);
-      return childNextWindowIndex == C.INDEX_UNSET ? 0 : childNextWindowIndex;
-    }
-
-    @Override
-    public int getPreviousWindowIndex(int windowIndex, @ExoPlayer.RepeatMode int repeatMode) {
-      int childPreviousWindowIndex = childTimeline.getPreviousWindowIndex(windowIndex, repeatMode);
-      return childPreviousWindowIndex == C.INDEX_UNSET ? getWindowCount() - 1
-          : childPreviousWindowIndex;
-    }
-
-    @Override
-    public Window getWindow(int windowIndex, Window window, boolean setIds,
-        long defaultPositionProjectionUs) {
-      return childTimeline.getWindow(windowIndex, window, setIds, defaultPositionProjectionUs);
-    }
-
-    @Override
-    public int getPeriodCount() {
-      return childTimeline.getPeriodCount();
-    }
-
-    @Override
     public Period getPeriod(int periodIndex, Period period, boolean setIds) {
-      return childTimeline.getPeriod(periodIndex, period, setIds);
+      childTimeline.getPeriod(periodIndex % childPeriodCount, period, setIds);
+      int loopCount = (periodIndex / childPeriodCount);
+      period.windowIndex += loopCount * childWindowCount;
+      if (setIds) {
+        period.uid = Pair.create(loopCount, period.uid);
+      }
+      return period;
     }
 
     @Override
     public int getIndexOfPeriod(Object uid) {
-      return childTimeline.getIndexOfPeriod(uid);
+      if (!(uid instanceof Pair)) {
+        return C.INDEX_UNSET;
+      }
+      Pair<?, ?> loopCountAndChildUid = (Pair<?, ?>) uid;
+      if (!(loopCountAndChildUid.first instanceof Integer)) {
+        return C.INDEX_UNSET;
+      }
+      int loopCount = (Integer) loopCountAndChildUid.first;
+      int periodIndexOffset = loopCount * childPeriodCount;
+      return childTimeline.getIndexOfPeriod(loopCountAndChildUid.second) + periodIndexOffset;
     }
+
   }
+
 }

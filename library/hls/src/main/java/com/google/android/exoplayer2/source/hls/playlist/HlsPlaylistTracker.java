@@ -200,27 +200,16 @@ public final class HlsPlaylistTracker implements Loader.Callback<ParsingLoadable
   }
 
   /**
-   * If the tracker is having trouble refreshing the master playlist or the primary playlist, this
-   * method throws the underlying error. Otherwise, does nothing.
+   * If the tracker is having trouble refreshing the primary playlist or loading an irreplaceable
+   * playlist, this method throws the underlying error. Otherwise, does nothing.
    *
    * @throws IOException The underlying error.
    */
-  public void maybeThrowPrimaryPlaylistRefreshError() throws IOException {
+  public void maybeThrowPlaylistRefreshError() throws IOException {
     initialPlaylistLoader.maybeThrowError();
     if (primaryHlsUrl != null) {
-      maybeThrowPlaylistRefreshError(primaryHlsUrl);
+      playlistBundles.get(primaryHlsUrl).mediaPlaylistLoader.maybeThrowError();
     }
-  }
-
-  /**
-   * If the playlist is having trouble loading the playlist referenced by the given {@link HlsUrl},
-   * this method throws the underlying error.
-   *
-   * @param url The {@link HlsUrl}.
-   * @throws IOException The underyling error.
-   */
-  public void maybeThrowPlaylistRefreshError(HlsUrl url) throws IOException {
-    playlistBundles.get(url).mediaPlaylistLoader.maybeThrowError();
   }
 
   /**

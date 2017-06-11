@@ -16,7 +16,6 @@
 package com.google.android.exoplayer2.decoder;
 
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 
 /**
  * Buffer for {@link SimpleDecoder} output.
@@ -41,7 +40,7 @@ public class SimpleOutputBuffer extends OutputBuffer {
   public ByteBuffer init(long timeUs, int size) {
     this.timeUs = timeUs;
     if (data == null || data.capacity() < size) {
-      data = ByteBuffer.allocateDirect(size).order(ByteOrder.nativeOrder());
+      data = ByteBuffer.allocateDirect(size);
     }
     data.position(0);
     data.limit(size);
