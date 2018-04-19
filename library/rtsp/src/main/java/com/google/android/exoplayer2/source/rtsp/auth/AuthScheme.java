@@ -30,9 +30,7 @@ public enum AuthScheme {
     }
 
     /**
-     * Returns the protocol identified by {@code scheme}.
-     *
-     * @throws IOException if {@code scheme} is unknown.
+     * Returns the protocol identified by {@code scheme}
      */
     @Nullable
     public static AuthScheme parse(String scheme) throws IOException {
