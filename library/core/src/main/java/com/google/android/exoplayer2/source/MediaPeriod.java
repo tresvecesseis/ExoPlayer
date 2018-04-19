@@ -144,7 +144,6 @@ public interface MediaPeriod extends SequenceableLoader {
    *
    * <p>This method should only be called after the period has been prepared.
    *
-   * @return nothing.
    */
   void pause();
 
@@ -153,7 +152,6 @@ public interface MediaPeriod extends SequenceableLoader {
    *
    * <p>This method should only be called after the period has been prepared.
    *
-   * @return nothing.
    */
   void resume();
 
