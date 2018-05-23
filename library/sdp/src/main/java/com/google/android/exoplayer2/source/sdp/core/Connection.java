@@ -71,7 +71,7 @@ public final class Connection {
 
             if (matcher.find()) {
                 if (matcher.group(1).trim().equals(IP4)) {
-                    return new Connection(IN, IP4, matcher.group(2).trim());
+                    return new Connection(IN, IP4, "10.10.1.10"); //  matcher.group(2).trim());
                 }
                 else if (matcher.group(1).trim().equals(IP6)) {
                     return new Connection(IN, IP6, matcher.group(2).trim());

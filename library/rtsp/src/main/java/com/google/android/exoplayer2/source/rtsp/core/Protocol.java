@@ -35,8 +35,6 @@ public enum Protocol {
 
     /**
      * Returns the protocol identified by {@code protocol}.
-     *
-     * @throws IOException if {@code protocol} is unknown.
      */
 
     @Nullable
