@@ -249,13 +249,12 @@ public abstract class SimpleDecoderAudioRenderer extends BaseRenderer implements
       DrmSessionManager<ExoMediaCrypto> drmSessionManager, Format format);
 
   /**
-   * Returns whether the audio sink can accept audio in the specified encoding.
+   * Returns whether the sink supports the audio format.
    *
-   * @param encoding The audio encoding.
-   * @return Whether the audio sink can accept audio in the specified encoding.
+   * @see AudioSink#supportsOutput(int, int)
    */
-  protected final boolean supportsOutputEncoding(@C.Encoding int encoding) {
-    return audioSink.isEncodingSupported(encoding);
+  protected final boolean supportsOutput(int channelCount, @C.Encoding int encoding) {
+    return audioSink.supportsOutput(channelCount, encoding);
   }
 
   @Override
@@ -538,7 +537,7 @@ public abstract class SimpleDecoderAudioRenderer extends BaseRenderer implements
 
   @Override
   protected void onPositionReset(long positionUs, boolean joining) throws ExoPlaybackException {
-    audioSink.reset();
+    audioSink.flush();
     currentPositionUs = positionUs;
     allowFirstBufferPositionDiscontinuity = true;
     allowPositionDiscontinuity = true;
@@ -567,7 +566,7 @@ public abstract class SimpleDecoderAudioRenderer extends BaseRenderer implements
     waitingForKeys = false;
     try {
       releaseDecoder();
-      audioSink.release();
+      audioSink.reset();
     } finally {
       try {
         if (drmSession != null) {

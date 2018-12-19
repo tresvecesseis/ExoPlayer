@@ -16,9 +16,11 @@
 package com.google.android.exoplayer2.ext.cronet;
 
 import android.net.Uri;
+import android.support.annotation.Nullable;
 import android.text.TextUtils;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.ExoPlayerLibraryInfo;
+import com.google.android.exoplayer2.metadata.icy.IcyHeaders;
 import com.google.android.exoplayer2.upstream.BaseDataSource;
 import com.google.android.exoplayer2.upstream.DataSourceException;
 import com.google.android.exoplayer2.upstream.DataSpec;
@@ -326,8 +328,12 @@ public class CronetDataSource extends BaseDataSource implements HttpDataSource {
     // Check for a valid response code.
     int responseCode = responseInfo.getHttpStatusCode();
     if (responseCode < 200 || responseCode > 299) {
-      InvalidResponseCodeException exception = new InvalidResponseCodeException(responseCode,
-          responseInfo.getAllHeaders(), currentDataSpec);
+      InvalidResponseCodeException exception =
+          new InvalidResponseCodeException(
+              responseCode,
+              responseInfo.getHttpStatusText(),
+              responseInfo.getAllHeaders(),
+              currentDataSpec);
       if (responseCode == 416) {
         exception.initCause(new DataSourceException(DataSourceException.POSITION_OUT_OF_RANGE));
       }
@@ -451,6 +457,18 @@ public class CronetDataSource extends BaseDataSource implements HttpDataSource {
     }
   }
 
+  /** Returns current {@link UrlRequest}. May be null if the data source is not opened. */
+  @Nullable
+  protected UrlRequest getCurrentUrlRequest() {
+    return currentUrlRequest;
+  }
+
+  /** Returns current {@link UrlResponseInfo}. May be null if the data source is not opened. */
+  @Nullable
+  protected UrlResponseInfo getCurrentUrlResponseInfo() {
+    return responseInfo;
+  }
+
   // Internal methods.
 
   private UrlRequest.Builder buildRequestBuilder(DataSpec dataSpec) throws IOException {
@@ -475,6 +493,11 @@ public class CronetDataSource extends BaseDataSource implements HttpDataSource {
     }
     if (dataSpec.httpBody != null && !isContentTypeHeaderSet) {
       throw new IOException("HTTP request with non-empty body must set Content-Type");
+    }
+    if (dataSpec.isFlagSet(DataSpec.FLAG_ALLOW_ICY_METADATA)) {
+      requestBuilder.addHeader(
+          IcyHeaders.REQUEST_HEADER_ENABLE_METADATA_NAME,
+          IcyHeaders.REQUEST_HEADER_ENABLE_METADATA_VALUE);
     }
     // Set the Range header.
     if (dataSpec.position != 0 || dataSpec.length != C.LENGTH_UNSET) {
@@ -611,7 +634,8 @@ public class CronetDataSource extends BaseDataSource implements HttpDataSource {
         // The industry standard is to disregard POST redirects when the status code is 307 or 308.
         if (responseCode == 307 || responseCode == 308) {
           exception =
-              new InvalidResponseCodeException(responseCode, info.getAllHeaders(), currentDataSpec);
+              new InvalidResponseCodeException(
+                  responseCode, info.getHttpStatusText(), info.getAllHeaders(), currentDataSpec);
           operation.open();
           return;
         }

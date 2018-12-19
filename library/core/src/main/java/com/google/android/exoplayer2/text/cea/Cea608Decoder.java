@@ -33,6 +33,7 @@ import com.google.android.exoplayer2.text.SubtitleInputBuffer;
 import com.google.android.exoplayer2.util.MimeTypes;
 import com.google.android.exoplayer2.util.ParsableByteArray;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -46,7 +47,6 @@ public final class Cea608Decoder extends CeaDecoder {
 
   private static final int NTSC_CC_FIELD_1 = 0x00;
   private static final int NTSC_CC_FIELD_2 = 0x01;
-  private static final int CC_VALID_608_ID = 0x04;
 
   private static final int CC_MODE_UNKNOWN = 0;
   private static final int CC_MODE_ROLL_UP = 1;
@@ -179,6 +179,41 @@ public final class Cea608Decoder extends CeaDecoder {
     0xC5, 0xE5, 0xD8, 0xF8, 0x250C, 0x2510, 0x2514, 0x2518
   };
 
+  private static final boolean[] ODD_PARITY_BYTE_TABLE = {
+    false, true, true, false, true, false, false, true, // 0
+    true, false, false, true, false, true, true, false, // 8
+    true, false, false, true, false, true, true, false, // 16
+    false, true, true, false, true, false, false, true, // 24
+    true, false, false, true, false, true, true, false, // 32
+    false, true, true, false, true, false, false, true, // 40
+    false, true, true, false, true, false, false, true, // 48
+    true, false, false, true, false, true, true, false, // 56
+    true, false, false, true, false, true, true, false, // 64
+    false, true, true, false, true, false, false, true, // 72
+    false, true, true, false, true, false, false, true, // 80
+    true, false, false, true, false, true, true, false, // 88
+    false, true, true, false, true, false, false, true, // 96
+    true, false, false, true, false, true, true, false, // 104
+    true, false, false, true, false, true, true, false, // 112
+    false, true, true, false, true, false, false, true, // 120
+    true, false, false, true, false, true, true, false, // 128
+    false, true, true, false, true, false, false, true, // 136
+    false, true, true, false, true, false, false, true, // 144
+    true, false, false, true, false, true, true, false, // 152
+    false, true, true, false, true, false, false, true, // 160
+    true, false, false, true, false, true, true, false, // 168
+    true, false, false, true, false, true, true, false, // 176
+    false, true, true, false, true, false, false, true, // 184
+    false, true, true, false, true, false, false, true, // 192
+    true, false, false, true, false, true, true, false, // 200
+    true, false, false, true, false, true, true, false, // 208
+    false, true, true, false, true, false, false, true, // 216
+    true, false, false, true, false, true, true, false, // 224
+    false, true, true, false, true, false, false, true, // 232
+    false, true, true, false, true, false, false, true, // 240
+    true, false, false, true, false, true, true, false, // 248
+  };
+
   private final ParsableByteArray ccData;
   private final int packetLength;
   private final int selectedField;
@@ -191,6 +226,7 @@ public final class Cea608Decoder extends CeaDecoder {
   private int captionMode;
   private int captionRowCount;
 
+  private boolean captionValid;
   private boolean repeatableControlSet;
   private byte repeatableControlCc1;
   private byte repeatableControlCc2;
@@ -229,6 +265,7 @@ public final class Cea608Decoder extends CeaDecoder {
     setCaptionMode(CC_MODE_UNKNOWN);
     setCaptionRowCount(DEFAULT_CAPTIONS_ROW_COUNT);
     resetCueBuilders();
+    captionValid = false;
     repeatableControlSet = false;
     repeatableControlCc1 = 0;
     repeatableControlCc2 = 0;
@@ -257,32 +294,54 @@ public final class Cea608Decoder extends CeaDecoder {
     boolean captionDataProcessed = false;
     boolean isRepeatableControl = false;
     while (ccData.bytesLeft() >= packetLength) {
-      byte ccDataHeader = packetLength == 2 ? CC_IMPLICIT_DATA_HEADER
+      byte ccHeader = packetLength == 2 ? CC_IMPLICIT_DATA_HEADER
           : (byte) ccData.readUnsignedByte();
-      byte ccData1 = (byte) (ccData.readUnsignedByte() & 0x7F); // strip the parity bit
-      byte ccData2 = (byte) (ccData.readUnsignedByte() & 0x7F); // strip the parity bit
+      int ccByte1 = ccData.readUnsignedByte();
+      int ccByte2 = ccData.readUnsignedByte();
 
-      // Only examine valid CEA-608 packets
       // TODO: We're currently ignoring the top 5 marker bits, which should all be 1s according
       // to the CEA-608 specification. We need to determine if the data should be handled
       // differently when that is not the case.
-      if ((ccDataHeader & (CC_VALID_FLAG | CC_TYPE_FLAG)) != CC_VALID_608_ID) {
+
+      if ((ccHeader & CC_TYPE_FLAG) != 0) {
+        // Do not process anything that is not part of the 608 byte stream.
         continue;
       }
 
-      // Only examine packets within the selected field
-      if ((selectedField == 1 && (ccDataHeader & CC_FIELD_FLAG) != NTSC_CC_FIELD_1)
-          || (selectedField == 2 && (ccDataHeader & CC_FIELD_FLAG) != NTSC_CC_FIELD_2)) {
+      if ((selectedField == 1 && (ccHeader & CC_FIELD_FLAG) != NTSC_CC_FIELD_1)
+          || (selectedField == 2 && (ccHeader & CC_FIELD_FLAG) != NTSC_CC_FIELD_2)) {
+        // Do not process packets not within the selected field.
         continue;
       }
 
-      // Ignore empty captions.
+      // Strip the parity bit from each byte to get CC data.
+      byte ccData1 = (byte) (ccByte1 & 0x7F);
+      byte ccData2 = (byte) (ccByte2 & 0x7F);
+
       if (ccData1 == 0 && ccData2 == 0) {
+        // Ignore empty captions.
+        continue;
+      }
+
+      boolean previousCaptionValid = captionValid;
+      captionValid = (ccHeader & CC_VALID_FLAG) == CC_VALID_FLAG;
+      if (!captionValid) {
+        if (previousCaptionValid) {
+          // The encoder has flipped the validity bit to indicate captions are being turned off.
+          resetCueBuilders();
+          captionDataProcessed = true;
+        }
         continue;
       }
 
       // If we've reached this point then there is data to process; flag that work has been done.
       captionDataProcessed = true;
+
+      if (!ODD_PARITY_BYTE_TABLE[ccByte1] || !ODD_PARITY_BYTE_TABLE[ccByte2]) {
+        // The data is invalid.
+        resetCueBuilders();
+        continue;
+      }
 
       // Special North American character set.
       // ccData1 - 0|0|0|1|C|0|0|1
@@ -451,7 +510,7 @@ public final class Cea608Decoder extends CeaDecoder {
 
     switch (cc2) {
       case CTRL_ERASE_DISPLAYED_MEMORY:
-        cues = null;
+        cues = Collections.emptyList();
         if (captionMode == CC_MODE_ROLL_UP || captionMode == CC_MODE_PAINT_ON) {
           resetCueBuilders();
         }
@@ -501,12 +560,20 @@ public final class Cea608Decoder extends CeaDecoder {
     int oldCaptionMode = this.captionMode;
     this.captionMode = captionMode;
 
+    if (captionMode == CC_MODE_PAINT_ON) {
+      // Switching to paint-on mode should have no effect except to select the mode.
+      for (int i = 0; i < cueBuilders.size(); i++) {
+        cueBuilders.get(i).setCaptionMode(captionMode);
+      }
+      return;
+    }
+
     // Clear the working memory.
     resetCueBuilders();
     if (oldCaptionMode == CC_MODE_PAINT_ON || captionMode == CC_MODE_ROLL_UP
         || captionMode == CC_MODE_UNKNOWN) {
       // When switching from paint-on or to roll-up or unknown, we also need to clear the caption.
-      cues = null;
+      cues = Collections.emptyList();
     }
   }
 
@@ -603,6 +670,10 @@ public final class Cea608Decoder extends CeaDecoder {
       row = BASE_ROW;
       indent = 0;
       tabOffset = 0;
+    }
+
+    public void setCaptionMode(int captionMode) {
+      this.captionMode = captionMode;
     }
 
     public void setCaptionRowCount(int captionRowCount) {

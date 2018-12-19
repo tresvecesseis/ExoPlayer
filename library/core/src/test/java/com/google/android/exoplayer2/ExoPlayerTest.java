@@ -498,12 +498,12 @@ public final class ExoPlayerTest {
             .waitForPlaybackState(Player.STATE_READY)
             .seek(10)
             // Start playback and wait until playback reaches second window.
-            .play()
-            .waitForPositionDiscontinuity()
+            .playUntilStartOfWindow(/* windowIndex= */ 1)
             // Seek twice in concession, expecting the first seek to be replaced (and thus except
             // only on seek processed callback).
             .seek(5)
             .seek(60)
+            .play()
             .build();
     final List<Integer> playbackStatesWhenSeekProcessed = new ArrayList<>();
     EventListener eventListener =
@@ -773,7 +773,7 @@ public final class ExoPlayerTest {
     }
     // There are 2 renderers, and track selections are made twice. The second time one renderer is
     // disabled, so only one out of the two track selections is enabled.
-    assertThat(createdTrackSelections).hasSize(4);
+    assertThat(createdTrackSelections).hasSize(3);
     assertThat(numSelectionsEnabled).isEqualTo(3);
   }
 
@@ -2058,8 +2058,11 @@ public final class ExoPlayerTest {
             .pause()
             .waitForPlaybackState(Player.STATE_READY)
             .seek(/* windowIndex= */ 0, /* positionMs= */ 9999)
+            .waitForSeekProcessed()
             .seek(/* windowIndex= */ 0, /* positionMs= */ 1)
+            .waitForSeekProcessed()
             .seek(/* windowIndex= */ 0, /* positionMs= */ 9999)
+            .waitForSeekProcessed()
             .play()
             .build();
     ExoPlayerTestRunner testRunner =
@@ -2532,6 +2535,59 @@ public final class ExoPlayerTest {
 
     assertThat(periodIndexWhenReady.get()).isEqualTo(1);
     assertThat(positionWhenReady.get()).isEqualTo(periodDurationMs + 10);
+  }
+
+  @Test
+  public void periodTransitionReportsCorrectBufferedPosition() throws Exception {
+    int periodCount = 3;
+    long periodDurationUs = 5 * C.MICROS_PER_SECOND;
+    long windowDurationUs = periodCount * periodDurationUs;
+    Timeline timeline =
+        new FakeTimeline(
+            new TimelineWindowDefinition(
+                periodCount,
+                /* id= */ new Object(),
+                /* isSeekable= */ true,
+                /* isDynamic= */ false,
+                windowDurationUs));
+    AtomicReference<Player> playerReference = new AtomicReference<>();
+    AtomicLong bufferedPositionAtFirstDiscontinuityMs = new AtomicLong(C.TIME_UNSET);
+    EventListener eventListener =
+        new EventListener() {
+          @Override
+          public void onPositionDiscontinuity(@DiscontinuityReason int reason) {
+            if (reason == Player.DISCONTINUITY_REASON_PERIOD_TRANSITION) {
+              if (bufferedPositionAtFirstDiscontinuityMs.get() == C.TIME_UNSET) {
+                bufferedPositionAtFirstDiscontinuityMs.set(
+                    playerReference.get().getBufferedPosition());
+              }
+            }
+          }
+        };
+    ActionSchedule actionSchedule =
+        new ActionSchedule.Builder("periodTransitionReportsCorrectBufferedPosition")
+            .executeRunnable(
+                new PlayerRunnable() {
+                  @Override
+                  public void run(SimpleExoPlayer player) {
+                    playerReference.set(player);
+                    player.addListener(eventListener);
+                  }
+                })
+            .pause()
+            // Wait until all periods are fully buffered.
+            .waitForIsLoading(/* targetIsLoading= */ true)
+            .waitForIsLoading(/* targetIsLoading= */ false)
+            .play()
+            .build();
+    new Builder()
+        .setTimeline(timeline)
+        .setActionSchedule(actionSchedule)
+        .build(context)
+        .start()
+        .blockUntilEnded(TIMEOUT_MS);
+
+    assertThat(bufferedPositionAtFirstDiscontinuityMs.get()).isEqualTo(C.usToMs(windowDurationUs));
   }
 
   // Internal methods.

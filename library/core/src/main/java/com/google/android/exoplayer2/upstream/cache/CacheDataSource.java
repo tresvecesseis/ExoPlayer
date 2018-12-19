@@ -34,6 +34,7 @@ import java.io.InterruptedIOException;
 import java.lang.annotation.Documented;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -41,10 +42,6 @@ import java.util.Map;
  * A {@link DataSource} that reads and writes a {@link Cache}. Requests are fulfilled from the cache
  * when possible. When data is not cached it is requested from an upstream {@link DataSource} and
  * written into the cache.
- *
- * <p>By default requests whose length can not be resolved are not cached. This is to prevent
- * caching of progressive live streams, which should usually not be cached. Caching of this kind of
- * requests can be enabled per request with {@link DataSpec#FLAG_ALLOW_CACHING_UNKNOWN_LENGTH}.
  */
 public final class CacheDataSource implements DataSource {
 
@@ -302,7 +299,7 @@ public final class CacheDataSource implements DataSource {
       if (dataSpec.length != C.LENGTH_UNSET || currentRequestIgnoresCache) {
         bytesRemaining = dataSpec.length;
       } else {
-        bytesRemaining = cache.getContentLength(key);
+        bytesRemaining = ContentMetadata.getContentLength(cache.getContentMetadata(key));
         if (bytesRemaining != C.LENGTH_UNSET) {
           bytesRemaining -= dataSpec.position;
           if (bytesRemaining <= 0) {
@@ -367,7 +364,7 @@ public final class CacheDataSource implements DataSource {
     // TODO: Implement.
     return isReadingFromUpstream()
         ? upstreamDataSource.getResponseHeaders()
-        : DataSource.super.getResponseHeaders();
+        : Collections.emptyMap();
   }
 
   @Override
@@ -487,16 +484,12 @@ public final class CacheDataSource implements DataSource {
     ContentMetadataMutations mutations = new ContentMetadataMutations();
     if (currentDataSpecLengthUnset && resolvedLength != C.LENGTH_UNSET) {
       bytesRemaining = resolvedLength;
-      ContentMetadataInternal.setContentLength(mutations, readPosition + bytesRemaining);
+      ContentMetadataMutations.setContentLength(mutations, readPosition + bytesRemaining);
     }
     if (isReadingFromUpstream()) {
       actualUri = currentDataSource.getUri();
       boolean isRedirected = !uri.equals(actualUri);
-      if (isRedirected) {
-        ContentMetadataInternal.setRedirectedUri(mutations, actualUri);
-      } else {
-        ContentMetadataInternal.removeRedirectedUri(mutations);
-      }
+      ContentMetadataMutations.setRedirectedUri(mutations, isRedirected ? actualUri : null);
     }
     if (isWritingToCache()) {
       cache.applyContentMetadataMutations(key, mutations);
@@ -506,14 +499,15 @@ public final class CacheDataSource implements DataSource {
   private void setNoBytesRemainingAndMaybeStoreLength() throws IOException {
     bytesRemaining = 0;
     if (isWritingToCache()) {
-      cache.setContentLength(key, readPosition);
+      ContentMetadataMutations mutations = new ContentMetadataMutations();
+      ContentMetadataMutations.setContentLength(mutations, readPosition);
+      cache.applyContentMetadataMutations(key, mutations);
     }
   }
 
   private static Uri getRedirectedUriOrDefault(Cache cache, String key, Uri defaultUri) {
-    ContentMetadata contentMetadata = cache.getContentMetadata(key);
-    Uri redirectedUri = ContentMetadataInternal.getRedirectedUri(contentMetadata);
-    return redirectedUri == null ? defaultUri : redirectedUri;
+    Uri redirectedUri = ContentMetadata.getRedirectedUri(cache.getContentMetadata(key));
+    return redirectedUri != null ? redirectedUri : defaultUri;
   }
 
   private static boolean isCausedByPositionOutOfRange(IOException e) {

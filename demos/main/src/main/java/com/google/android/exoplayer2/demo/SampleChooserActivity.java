@@ -37,6 +37,7 @@ import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
 import com.google.android.exoplayer2.ParserException;
+import com.google.android.exoplayer2.RenderersFactory;
 import com.google.android.exoplayer2.offline.DownloadService;
 import com.google.android.exoplayer2.upstream.DataSource;
 import com.google.android.exoplayer2.upstream.DataSourceInputStream;
@@ -177,7 +178,11 @@ public class SampleChooserActivity extends Activity
           .show();
     } else {
       UriSample uriSample = (UriSample) sample;
-      downloadTracker.toggleDownload(this, sample.name, uriSample.uri, uriSample.extension);
+      RenderersFactory renderersFactory =
+          ((DemoApplication) getApplication())
+              .buildRenderersFactory(isNonNullAndChecked(preferExtensionDecodersMenuItem));
+      downloadTracker.toggleDownload(
+          this, sample.name, uriSample.uri, uriSample.extension, renderersFactory);
     }
   }
 
@@ -350,8 +355,7 @@ public class SampleChooserActivity extends Activity
               ? null
               : new DrmInfo(drmScheme, drmLicenseUrl, drmKeyRequestProperties, drmMultiSession);
       if (playlistSamples != null) {
-        UriSample[] playlistSamplesArray = playlistSamples.toArray(
-            new UriSample[playlistSamples.size()]);
+        UriSample[] playlistSamplesArray = playlistSamples.toArray(new UriSample[0]);
         return new PlaylistSample(sampleName, drmInfo, playlistSamplesArray);
       } else {
         return new UriSample(

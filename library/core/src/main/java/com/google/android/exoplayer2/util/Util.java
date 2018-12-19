@@ -48,8 +48,15 @@ import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.ExoPlayerLibraryInfo;
 import com.google.android.exoplayer2.Format;
 import com.google.android.exoplayer2.ParserException;
+import com.google.android.exoplayer2.Renderer;
+import com.google.android.exoplayer2.RendererCapabilities;
+import com.google.android.exoplayer2.RenderersFactory;
 import com.google.android.exoplayer2.SeekParameters;
+import com.google.android.exoplayer2.audio.AudioRendererEventListener;
+import com.google.android.exoplayer2.drm.DrmSessionManager;
+import com.google.android.exoplayer2.drm.FrameworkMediaCrypto;
 import com.google.android.exoplayer2.upstream.DataSource;
+import com.google.android.exoplayer2.video.VideoRendererEventListener;
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.File;
@@ -204,7 +211,8 @@ public final class Util {
     }
     for (Uri uri : uris) {
       if ("http".equals(uri.getScheme())
-          && !NetworkSecurityPolicy.getInstance().isCleartextTrafficPermitted(uri.getHost())) {
+          && !NetworkSecurityPolicy.getInstance()
+              .isCleartextTrafficPermitted(Assertions.checkNotNull(uri.getHost()))) {
         // The security policy prevents cleartext traffic.
         return false;
       }
@@ -638,7 +646,7 @@ public final class Util {
     if (index < 0) {
       index = -(index + 2);
     } else {
-      while ((--index) >= 0 && array[index] == value) {}
+      while (--index >= 0 && array[index] == value) {}
       if (inclusive) {
         index++;
       }
@@ -670,7 +678,7 @@ public final class Util {
     if (index < 0) {
       index = -(index + 2);
     } else {
-      while ((--index) >= 0 && array[index] == value) {}
+      while (--index >= 0 && array[index] == value) {}
       if (inclusive) {
         index++;
       }
@@ -706,7 +714,7 @@ public final class Util {
     if (index < 0) {
       index = -(index + 2);
     } else {
-      while ((--index) >= 0 && list.get(index).compareTo(value) == 0) {}
+      while (--index >= 0 && list.get(index).compareTo(value) == 0) {}
       if (inclusive) {
         index++;
       }
@@ -734,12 +742,45 @@ public final class Util {
    *     equal to) {@code value}.
    */
   public static int binarySearchCeil(
+      int[] array, int value, boolean inclusive, boolean stayInBounds) {
+    int index = Arrays.binarySearch(array, value);
+    if (index < 0) {
+      index = ~index;
+    } else {
+      while (++index < array.length && array[index] == value) {}
+      if (inclusive) {
+        index--;
+      }
+    }
+    return stayInBounds ? Math.min(array.length - 1, index) : index;
+  }
+
+  /**
+   * Returns the index of the smallest element in {@code array} that is greater than (or optionally
+   * equal to) a specified {@code value}.
+   *
+   * <p>The search is performed using a binary search algorithm, so the array must be sorted. If the
+   * array contains multiple elements equal to {@code value} and {@code inclusive} is true, the
+   * index of the last one will be returned.
+   *
+   * @param array The array to search.
+   * @param value The value being searched for.
+   * @param inclusive If the value is present in the array, whether to return the corresponding
+   *     index. If false then the returned index corresponds to the smallest element strictly
+   *     greater than the value.
+   * @param stayInBounds If true, then {@code (a.length - 1)} will be returned in the case that the
+   *     value is greater than the largest element in the array. If false then {@code a.length} will
+   *     be returned.
+   * @return The index of the smallest element in {@code array} that is greater than (or optionally
+   *     equal to) {@code value}.
+   */
+  public static int binarySearchCeil(
       long[] array, long value, boolean inclusive, boolean stayInBounds) {
     int index = Arrays.binarySearch(array, value);
     if (index < 0) {
       index = ~index;
     } else {
-      while ((++index) < array.length && array[index] == value) {}
+      while (++index < array.length && array[index] == value) {}
       if (inclusive) {
         index--;
       }
@@ -777,7 +818,7 @@ public final class Util {
       index = ~index;
     } else {
       int listSize = list.size();
-      while ((++index) < listSize && list.get(index).compareTo(value) == 0) {}
+      while (++index < listSize && list.get(index).compareTo(value) == 0) {}
       if (inclusive) {
         index--;
       }
@@ -1620,31 +1661,24 @@ public final class Util {
   }
 
   /**
-   * Returns the {@link C.NetworkType} of the current network connection. {@link
-   * C#NETWORK_TYPE_UNKNOWN} will be returned if the {@code ACCESS_NETWORK_STATE} permission is not
-   * granted or the network connection type couldn't be determined.
+   * Returns the {@link C.NetworkType} of the current network connection.
    *
    * @param context A context to access the connectivity manager.
-   * @return The {@link C.NetworkType} of the current network connection, or {@link
-   *     C#NETWORK_TYPE_UNKNOWN} if the {@code ACCESS_NETWORK_STATE} permission is not granted or
-   *     {@code context} is null.
+   * @return The {@link C.NetworkType} of the current network connection.
    */
-  public static @C.NetworkType int getNetworkType(@Nullable Context context) {
+  @C.NetworkType
+  public static int getNetworkType(Context context) {
     if (context == null) {
+      // Note: This is for backward compatibility only (context used to be @Nullable).
       return C.NETWORK_TYPE_UNKNOWN;
     }
     NetworkInfo networkInfo;
-    try {
-      ConnectivityManager connectivityManager =
-          (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
-      if (connectivityManager == null) {
-        return C.NETWORK_TYPE_UNKNOWN;
-      }
-      networkInfo = connectivityManager.getActiveNetworkInfo();
-    } catch (SecurityException e) {
-      // Permission ACCESS_NETWORK_STATE not granted.
+    ConnectivityManager connectivityManager =
+        (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+    if (connectivityManager == null) {
       return C.NETWORK_TYPE_UNKNOWN;
     }
+    networkInfo = connectivityManager.getActiveNetworkInfo();
     if (networkInfo == null || !networkInfo.isConnected()) {
       return C.NETWORK_TYPE_OFFLINE;
     }
@@ -1659,7 +1693,7 @@ public final class Util {
         return getMobileNetworkType(networkInfo);
       case ConnectivityManager.TYPE_ETHERNET:
         return C.NETWORK_TYPE_ETHERNET;
-      default: // Ethernet, VPN, Bluetooth, Dummy.
+      default: // VPN, Bluetooth, Dummy.
         return C.NETWORK_TYPE_OTHER;
     }
   }
@@ -1813,6 +1847,32 @@ public final class Util {
       getDisplaySizeV9(display, displaySize);
     }
     return displaySize;
+  }
+
+  /**
+   * Extract renderer capabilities for the renderers created by the provided renderers factory.
+   *
+   * @param renderersFactory A {@link RenderersFactory}.
+   * @param drmSessionManager An optional {@link DrmSessionManager} used by the renderers.
+   * @return The {@link RendererCapabilities} for each renderer created by the {@code
+   *     renderersFactory}.
+   */
+  public static RendererCapabilities[] getRendererCapabilities(
+      RenderersFactory renderersFactory,
+      @Nullable DrmSessionManager<FrameworkMediaCrypto> drmSessionManager) {
+    Renderer[] renderers =
+        renderersFactory.createRenderers(
+            new Handler(),
+            new VideoRendererEventListener() {},
+            new AudioRendererEventListener() {},
+            (cues) -> {},
+            (metadata) -> {},
+            drmSessionManager);
+    RendererCapabilities[] capabilities = new RendererCapabilities[renderers.length];
+    for (int i = 0; i < renderers.length; i++) {
+      capabilities[i] = renderers[i].getCapabilities();
+    }
+    return capabilities;
   }
 
   @Nullable

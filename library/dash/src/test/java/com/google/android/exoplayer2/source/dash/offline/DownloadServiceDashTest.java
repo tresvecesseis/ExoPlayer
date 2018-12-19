@@ -24,6 +24,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.support.annotation.Nullable;
+import com.google.android.exoplayer2.offline.DefaultDownloaderFactory;
 import com.google.android.exoplayer2.offline.DownloadAction;
 import com.google.android.exoplayer2.offline.DownloadManager;
 import com.google.android.exoplayer2.offline.DownloadService;
@@ -116,14 +117,13 @@ public class DownloadServiceDashTest {
           actionFile.delete();
           final DownloadManager dashDownloadManager =
               new DownloadManager(
-                  new DownloaderConstructorHelper(cache, fakeDataSourceFactory),
-                  1,
-                  3,
                   actionFile,
-                  DashDownloadAction.DESERIALIZER);
+                  new DefaultDownloaderFactory(
+                      new DownloaderConstructorHelper(cache, fakeDataSourceFactory)),
+                  /* maxSimultaneousDownloads= */ 1,
+                  /* minRetryCount= */ 3);
           downloadManagerListener =
               new TestDownloadManagerListener(dashDownloadManager, dummyMainThread);
-          dashDownloadManager.addListener(downloadManagerListener);
           dashDownloadManager.startDownloads();
 
           dashDownloadService =
@@ -211,9 +211,13 @@ public class DownloadServiceDashTest {
     Collections.addAll(keysList, keys);
     DownloadAction result;
     if (isRemoveAction) {
-      result = DashDownloadAction.createRemoveAction(uri, data);
+      result =
+          DownloadAction.createRemoveAction(
+              DownloadAction.TYPE_DASH, uri, /* customCacheKey= */ null);
     } else {
-      result = DashDownloadAction.createDownloadAction(uri, data, keysList);
+      result =
+          DownloadAction.createDownloadAction(
+              DownloadAction.TYPE_DASH, uri, keysList, /* customCacheKey= */ null, data);
     }
     return result;
   }

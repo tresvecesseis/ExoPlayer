@@ -15,8 +15,13 @@
  */
 package com.google.android.exoplayer2.upstream;
 
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.net.ConnectivityManager;
 import android.os.Handler;
+import android.os.Looper;
 import android.support.annotation.Nullable;
 import android.util.SparseArray;
 import com.google.android.exoplayer2.C;
@@ -25,9 +30,12 @@ import com.google.android.exoplayer2.util.Clock;
 import com.google.android.exoplayer2.util.EventDispatcher;
 import com.google.android.exoplayer2.util.SlidingPercentile;
 import com.google.android.exoplayer2.util.Util;
+import java.lang.ref.WeakReference;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 
 /**
  * Estimates bandwidth by listening to data transfers.
@@ -76,43 +84,22 @@ public final class DefaultBandwidthMeter implements BandwidthMeter, TransferList
 
     @Nullable private final Context context;
 
-    @Nullable private Handler eventHandler;
-    @Nullable private EventListener eventListener;
     private SparseArray<Long> initialBitrateEstimates;
     private int slidingWindowMaxWeight;
     private Clock clock;
-
-    /** @deprecated Use {@link #Builder(Context)} instead. */
-    @Deprecated
-    public Builder() {
-      this(/* context= */ null);
-    }
+    private boolean resetOnNetworkTypeChange;
 
     /**
      * Creates a builder with default parameters and without listener.
      *
      * @param context A context.
      */
-    public Builder(@Nullable Context context) {
+    public Builder(Context context) {
+      // Handling of null is for backward compatibility only.
       this.context = context == null ? null : context.getApplicationContext();
       initialBitrateEstimates = getInitialBitrateEstimatesForCountry(Util.getCountryCode(context));
       slidingWindowMaxWeight = DEFAULT_SLIDING_WINDOW_MAX_WEIGHT;
       clock = Clock.DEFAULT;
-    }
-
-    /**
-     * Sets an event listener for new bandwidth estimates.
-     *
-     * @param eventHandler A handler for events.
-     * @param eventListener A listener of events.
-     * @return This builder.
-     * @throws IllegalArgumentException If the event handler or listener are null.
-     */
-    public Builder setEventListener(Handler eventHandler, EventListener eventListener) {
-      Assertions.checkArgument(eventHandler != null && eventListener != null);
-      this.eventHandler = eventHandler;
-      this.eventListener = eventListener;
-      return this;
     }
 
     /**
@@ -141,9 +128,8 @@ public final class DefaultBandwidthMeter implements BandwidthMeter, TransferList
     }
 
     /**
-     * Sets the initial bitrate estimate in bits per second for a network type that should be
-     * assumed when a bandwidth estimate is unavailable and the current network connection is of the
-     * specified type.
+     * Sets the initial bitrate estimate in bits per second that should be assumed when a bandwidth
+     * estimate is unavailable and the current network connection is of the specified type.
      *
      * @param networkType The {@link C.NetworkType} this initial estimate is for.
      * @param initialBitrateEstimate The initial bitrate estimate in bits per second.
@@ -182,21 +168,30 @@ public final class DefaultBandwidthMeter implements BandwidthMeter, TransferList
     }
 
     /**
+     * Sets whether to reset if the network type changes.
+     *
+     * <p>This method is experimental, and will be renamed or removed in a future release.
+     *
+     * @param resetOnNetworkTypeChange Whether to reset if the network type changes.
+     * @return This builder.
+     */
+    public Builder experimental_resetOnNetworkTypeChange(boolean resetOnNetworkTypeChange) {
+      this.resetOnNetworkTypeChange = resetOnNetworkTypeChange;
+      return this;
+    }
+
+    /**
      * Builds the bandwidth meter.
      *
      * @return A bandwidth meter with the configured properties.
      */
     public DefaultBandwidthMeter build() {
-      Long initialBitrateEstimate = initialBitrateEstimates.get(Util.getNetworkType(context));
-      if (initialBitrateEstimate == null) {
-        initialBitrateEstimate = initialBitrateEstimates.get(C.NETWORK_TYPE_UNKNOWN);
-      }
-      DefaultBandwidthMeter bandwidthMeter =
-          new DefaultBandwidthMeter(initialBitrateEstimate, slidingWindowMaxWeight, clock);
-      if (eventHandler != null && eventListener != null) {
-        bandwidthMeter.addEventListener(eventHandler, eventListener);
-      }
-      return bandwidthMeter;
+      return new DefaultBandwidthMeter(
+          context,
+          initialBitrateEstimates,
+          slidingWindowMaxWeight,
+          clock,
+          resetOnNetworkTypeChange);
     }
 
     private static SparseArray<Long> getInitialBitrateEstimatesForCountry(String countryCode) {
@@ -223,6 +218,8 @@ public final class DefaultBandwidthMeter implements BandwidthMeter, TransferList
   private static final int ELAPSED_MILLIS_FOR_ESTIMATE = 2000;
   private static final int BYTES_TRANSFERRED_FOR_ESTIMATE = 512 * 1024;
 
+  @Nullable private final Context context;
+  private final SparseArray<Long> initialBitrateEstimates;
   private final EventDispatcher<EventListener> eventDispatcher;
   private final SlidingPercentile slidingPercentile;
   private final Clock clock;
@@ -231,38 +228,60 @@ public final class DefaultBandwidthMeter implements BandwidthMeter, TransferList
   private long sampleStartTimeMs;
   private long sampleBytesTransferred;
 
+  @C.NetworkType private int networkType;
   private long totalElapsedTimeMs;
   private long totalBytesTransferred;
   private long bitrateEstimate;
+  private long lastReportedBitrateEstimate;
 
-  /** Creates a bandwidth meter with default parameters. */
+  private boolean networkTypeOverrideSet;
+  @C.NetworkType private int networkTypeOverride;
+
+  /** @deprecated Use {@link Builder} instead. */
+  @Deprecated
   public DefaultBandwidthMeter() {
-    this(DEFAULT_INITIAL_BITRATE_ESTIMATE, DEFAULT_SLIDING_WINDOW_MAX_WEIGHT, Clock.DEFAULT);
+    this(
+        /* context= */ null,
+        /* initialBitrateEstimates= */ new SparseArray<>(),
+        DEFAULT_SLIDING_WINDOW_MAX_WEIGHT,
+        Clock.DEFAULT,
+        /* resetOnNetworkTypeChange= */ false);
   }
 
-  /** @deprecated Use {@link Builder} instead. */
-  @Deprecated
-  public DefaultBandwidthMeter(Handler eventHandler, EventListener eventListener) {
-    this(DEFAULT_INITIAL_BITRATE_ESTIMATE, DEFAULT_SLIDING_WINDOW_MAX_WEIGHT, Clock.DEFAULT);
-    if (eventHandler != null && eventListener != null) {
-      addEventListener(eventHandler, eventListener);
-    }
-  }
-
-  /** @deprecated Use {@link Builder} instead. */
-  @Deprecated
-  public DefaultBandwidthMeter(Handler eventHandler, EventListener eventListener, int maxWeight) {
-    this(DEFAULT_INITIAL_BITRATE_ESTIMATE, maxWeight, Clock.DEFAULT);
-    if (eventHandler != null && eventListener != null) {
-      addEventListener(eventHandler, eventListener);
-    }
-  }
-
-  private DefaultBandwidthMeter(long initialBitrateEstimate, int maxWeight, Clock clock) {
+  private DefaultBandwidthMeter(
+      @Nullable Context context,
+      SparseArray<Long> initialBitrateEstimates,
+      int maxWeight,
+      Clock clock,
+      boolean resetOnNetworkTypeChange) {
+    this.context = context == null ? null : context.getApplicationContext();
+    this.initialBitrateEstimates = initialBitrateEstimates;
     this.eventDispatcher = new EventDispatcher<>();
     this.slidingPercentile = new SlidingPercentile(maxWeight);
     this.clock = clock;
-    bitrateEstimate = initialBitrateEstimate;
+    // Set the initial network type and bitrate estimate
+    networkType = context == null ? C.NETWORK_TYPE_UNKNOWN : Util.getNetworkType(context);
+    bitrateEstimate = getInitialBitrateEstimateForNetworkType(networkType);
+    // Register to receive connectivity actions if possible.
+    if (context != null && resetOnNetworkTypeChange) {
+      ConnectivityActionReceiver connectivityActionReceiver =
+          ConnectivityActionReceiver.getInstance(context);
+      connectivityActionReceiver.register(/* bandwidthMeter= */ this);
+    }
+  }
+
+  /**
+   * Overrides the network type. Handled in the same way as if the meter had detected a change from
+   * the current network type to the specified network type internally.
+   *
+   * <p>Applications should not normally call this method. It is intended for testing purposes.
+   *
+   * @param networkType The overriding network type.
+   */
+  public synchronized void setNetworkTypeOverride(@C.NetworkType int networkType) {
+    networkTypeOverride = networkType;
+    networkTypeOverrideSet = true;
+    onConnectivityAction();
   }
 
   @Override
@@ -329,16 +348,127 @@ public final class DefaultBandwidthMeter implements BandwidthMeter, TransferList
           || totalBytesTransferred >= BYTES_TRANSFERRED_FOR_ESTIMATE) {
         bitrateEstimate = (long) slidingPercentile.getPercentile(0.5f);
       }
-    }
-    notifyBandwidthSample(sampleElapsedTimeMs, sampleBytesTransferred, bitrateEstimate);
-    if (--streamCount > 0) {
+      maybeNotifyBandwidthSample(sampleElapsedTimeMs, sampleBytesTransferred, bitrateEstimate);
       sampleStartTimeMs = nowMs;
-    }
-    sampleBytesTransferred = 0;
+      sampleBytesTransferred = 0;
+    } // Else any sample bytes transferred will be carried forward into the next sample.
+    streamCount--;
   }
 
-  private void notifyBandwidthSample(int elapsedMs, long bytes, long bitrate) {
-    eventDispatcher.dispatch(listener -> listener.onBandwidthSample(elapsedMs, bytes, bitrate));
+  private synchronized void onConnectivityAction() {
+    int networkType =
+        networkTypeOverrideSet
+            ? networkTypeOverride
+            : (context == null ? C.NETWORK_TYPE_UNKNOWN : Util.getNetworkType(context));
+    if (this.networkType == networkType) {
+      return;
+    }
+
+    this.networkType = networkType;
+    if (networkType == C.NETWORK_TYPE_OFFLINE
+        || networkType == C.NETWORK_TYPE_UNKNOWN
+        || networkType == C.NETWORK_TYPE_OTHER) {
+      // It's better not to reset the bandwidth meter for these network types.
+      return;
+    }
+
+    // Reset the bitrate estimate and report it, along with any bytes transferred.
+    this.bitrateEstimate = getInitialBitrateEstimateForNetworkType(networkType);
+    long nowMs = clock.elapsedRealtime();
+    int sampleElapsedTimeMs = streamCount > 0 ? (int) (nowMs - sampleStartTimeMs) : 0;
+    maybeNotifyBandwidthSample(sampleElapsedTimeMs, sampleBytesTransferred, bitrateEstimate);
+
+    // Reset the remainder of the state.
+    sampleStartTimeMs = nowMs;
+    sampleBytesTransferred = 0;
+    totalBytesTransferred = 0;
+    totalElapsedTimeMs = 0;
+    slidingPercentile.reset();
+  }
+
+  private void maybeNotifyBandwidthSample(
+      int elapsedMs, long bytesTransferred, long bitrateEstimate) {
+    if (elapsedMs == 0 && bytesTransferred == 0 && bitrateEstimate == lastReportedBitrateEstimate) {
+      return;
+    }
+    lastReportedBitrateEstimate = bitrateEstimate;
+    eventDispatcher.dispatch(
+        listener -> listener.onBandwidthSample(elapsedMs, bytesTransferred, bitrateEstimate));
+  }
+
+  private long getInitialBitrateEstimateForNetworkType(@C.NetworkType int networkType) {
+    Long initialBitrateEstimate = initialBitrateEstimates.get(networkType);
+    if (initialBitrateEstimate == null) {
+      initialBitrateEstimate = initialBitrateEstimates.get(C.NETWORK_TYPE_UNKNOWN);
+    }
+    if (initialBitrateEstimate == null) {
+      initialBitrateEstimate = DEFAULT_INITIAL_BITRATE_ESTIMATE;
+    }
+    return initialBitrateEstimate;
+  }
+
+  /*
+   * Note: This class only holds a weak reference to DefaultBandwidthMeter instances. It should not
+   * be made non-static, since doing so adds a strong reference (i.e. DefaultBandwidthMeter.this).
+   */
+  private static class ConnectivityActionReceiver extends BroadcastReceiver {
+
+    @MonotonicNonNull private static ConnectivityActionReceiver staticInstance;
+
+    private final Handler mainHandler;
+    private final ArrayList<WeakReference<DefaultBandwidthMeter>> bandwidthMeters;
+
+    public static synchronized ConnectivityActionReceiver getInstance(Context context) {
+      if (staticInstance == null) {
+        staticInstance = new ConnectivityActionReceiver();
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
+        context.registerReceiver(staticInstance, filter);
+      }
+      return staticInstance;
+    }
+
+    private ConnectivityActionReceiver() {
+      mainHandler = new Handler(Looper.getMainLooper());
+      bandwidthMeters = new ArrayList<>();
+    }
+
+    public synchronized void register(DefaultBandwidthMeter bandwidthMeter) {
+      removeClearedReferences();
+      bandwidthMeters.add(new WeakReference<>(bandwidthMeter));
+      // Simulate an initial update on the main thread (like the sticky broadcast we'd receive if
+      // we were to register a separate broadcast receiver for each bandwidth meter).
+      mainHandler.post(() -> updateBandwidthMeter(bandwidthMeter));
+    }
+
+    @Override
+    public synchronized void onReceive(Context context, Intent intent) {
+      if (isInitialStickyBroadcast()) {
+        return;
+      }
+      removeClearedReferences();
+      for (int i = 0; i < bandwidthMeters.size(); i++) {
+        WeakReference<DefaultBandwidthMeter> bandwidthMeterReference = bandwidthMeters.get(i);
+        DefaultBandwidthMeter bandwidthMeter = bandwidthMeterReference.get();
+        if (bandwidthMeter != null) {
+          updateBandwidthMeter(bandwidthMeter);
+        }
+      }
+    }
+
+    private void updateBandwidthMeter(DefaultBandwidthMeter bandwidthMeter) {
+      bandwidthMeter.onConnectivityAction();
+    }
+
+    private void removeClearedReferences() {
+      for (int i = bandwidthMeters.size() - 1; i >= 0; i--) {
+        WeakReference<DefaultBandwidthMeter> bandwidthMeterReference = bandwidthMeters.get(i);
+        DefaultBandwidthMeter bandwidthMeter = bandwidthMeterReference.get();
+        if (bandwidthMeter == null) {
+          bandwidthMeters.remove(i);
+        }
+      }
+    }
   }
 
   private static Map<String, int[]> createInitialBitrateCountryGroupAssignment() {

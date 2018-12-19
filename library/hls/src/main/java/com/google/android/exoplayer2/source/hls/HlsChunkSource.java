@@ -262,7 +262,8 @@ import java.util.List;
       // Retry when playlist is refreshed.
       return;
     }
-    HlsMediaPlaylist mediaPlaylist = playlistTracker.getPlaylistSnapshot(selectedUrl);
+    HlsMediaPlaylist mediaPlaylist =
+        playlistTracker.getPlaylistSnapshot(selectedUrl, /* isForPlayback= */ true);
     independentSegments = mediaPlaylist.hasIndependentSegments;
 
     updateLiveEdgeTimeUs(mediaPlaylist);
@@ -279,7 +280,7 @@ import java.util.List;
         // behind the live window.
         selectedVariantIndex = oldVariantIndex;
         selectedUrl = variants[selectedVariantIndex];
-        mediaPlaylist = playlistTracker.getPlaylistSnapshot(selectedUrl);
+        mediaPlaylist = playlistTracker.getPlaylistSnapshot(selectedUrl, /* isForPlayback= */ true);
         startOfPlaylistInPeriodUs =
             mediaPlaylist.startTimeUs - playlistTracker.getInitialStartTimeUs();
         chunkMediaSequence = previous.getNextChunkIndex();
@@ -435,7 +436,8 @@ import java.util.List;
         chunkIterators[i] = MediaChunkIterator.EMPTY;
         continue;
       }
-      HlsMediaPlaylist playlist = playlistTracker.getPlaylistSnapshot(variantUrl);
+      HlsMediaPlaylist playlist =
+          playlistTracker.getPlaylistSnapshot(variantUrl, /* isForPlayback= */ false);
       long startOfPlaylistInPeriodUs =
           playlist.startTimeUs - playlistTracker.getInitialStartTimeUs();
       boolean switchingVariant = variantIndex != oldVariantIndex;
@@ -631,7 +633,7 @@ import java.util.List;
      * @param playlist The {@link HlsMediaPlaylist} to wrap.
      * @param startOfPlaylistInPeriodUs The start time of the playlist in the period, in
      *     microseconds.
-     * @param chunkIndex The chunk index in the playlist at which the iterator will start.
+     * @param chunkIndex The index of the first available chunk in the playlist.
      */
     public HlsMediaPlaylistSegmentIterator(
         HlsMediaPlaylist playlist, long startOfPlaylistInPeriodUs, int chunkIndex) {

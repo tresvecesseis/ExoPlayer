@@ -16,6 +16,7 @@
 package com.google.android.exoplayer2.upstream;
 
 import android.support.annotation.IntDef;
+import android.support.annotation.Nullable;
 import android.text.TextUtils;
 import com.google.android.exoplayer2.util.Predicate;
 import com.google.android.exoplayer2.util.Util;
@@ -294,15 +295,29 @@ public interface HttpDataSource extends DataSource {
      */
     public final int responseCode;
 
+    /** The http status message. */
+    @Nullable public final String responseMessage;
+
     /**
      * An unmodifiable map of the response header fields and values.
      */
     public final Map<String, List<String>> headerFields;
 
-    public InvalidResponseCodeException(int responseCode, Map<String, List<String>> headerFields,
+    /** @deprecated Use {@link #InvalidResponseCodeException(int, String, Map, DataSpec)}. */
+    @Deprecated
+    public InvalidResponseCodeException(
+        int responseCode, Map<String, List<String>> headerFields, DataSpec dataSpec) {
+      this(responseCode, /* responseMessage= */ null, headerFields, dataSpec);
+    }
+
+    public InvalidResponseCodeException(
+        int responseCode,
+        @Nullable String responseMessage,
+        Map<String, List<String>> headerFields,
         DataSpec dataSpec) {
       super("Response code: " + responseCode, dataSpec, TYPE_OPEN);
       this.responseCode = responseCode;
+      this.responseMessage = responseMessage;
       this.headerFields = headerFields;
     }
 

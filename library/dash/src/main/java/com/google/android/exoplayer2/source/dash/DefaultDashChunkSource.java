@@ -318,9 +318,12 @@ public class DefaultDashChunkSource implements DashChunkSource {
       }
     }
 
+    long periodDurationUs = representationHolder.periodDurationUs;
+    boolean periodEnded = periodDurationUs != C.TIME_UNSET;
+
     if (representationHolder.getSegmentCount() == 0) {
       // The index doesn't define any segments.
-      out.endOfStream = !manifest.dynamic || (periodIndex < manifest.getPeriodCount() - 1);
+      out.endOfStream = periodEnded;
       return;
     }
 
@@ -343,17 +346,15 @@ public class DefaultDashChunkSource implements DashChunkSource {
       fatalError = new BehindLiveWindowException();
       return;
     }
+
     if (segmentNum > lastAvailableSegmentNum
         || (missingLastSegment && segmentNum >= lastAvailableSegmentNum)) {
-      // The segment is beyond the end of the period. We know the period will not be extended if the
-      // manifest is static, or if there's a period after this one.
-      out.endOfStream = !manifest.dynamic || (periodIndex < manifest.getPeriodCount() - 1);
+      // The segment is beyond the end of the period.
+      out.endOfStream = periodEnded;
       return;
     }
 
-    long periodDurationUs = representationHolder.periodDurationUs;
-    if (periodDurationUs != C.TIME_UNSET
-        && representationHolder.getSegmentStartTimeUs(segmentNum) >= periodDurationUs) {
+    if (periodEnded && representationHolder.getSegmentStartTimeUs(segmentNum) >= periodDurationUs) {
       // The period duration clips the period to a position before the segment.
       out.endOfStream = true;
       return;
@@ -544,7 +545,7 @@ public class DefaultDashChunkSource implements DashChunkSource {
       long endTimeUs = representationHolder.getSegmentEndTimeUs(firstSegmentNum + segmentCount - 1);
       long periodDurationUs = representationHolder.periodDurationUs;
       long clippedEndTimeUs =
-          periodDurationUs != C.TIME_UNSET && periodDurationUs < endTimeUs
+          periodDurationUs != C.TIME_UNSET && periodDurationUs <= endTimeUs
               ? periodDurationUs
               : C.TIME_UNSET;
       DataSpec dataSpec = new DataSpec(segmentUri.resolveUri(baseUrl),
@@ -578,12 +579,14 @@ public class DefaultDashChunkSource implements DashChunkSource {
      * Creates iterator.
      *
      * @param representation The {@link RepresentationHolder} to wrap.
-     * @param segmentNum The number of the segment this iterator will be pointing to initially.
+     * @param firstAvailableSegmentNum The number of the first available segment.
      * @param lastAvailableSegmentNum The number of the last available segment.
      */
     public RepresentationSegmentIterator(
-        RepresentationHolder representation, long segmentNum, long lastAvailableSegmentNum) {
-      super(/* fromIndex= */ segmentNum, /* toIndex= */ lastAvailableSegmentNum);
+        RepresentationHolder representation,
+        long firstAvailableSegmentNum,
+        long lastAvailableSegmentNum) {
+      super(/* fromIndex= */ firstAvailableSegmentNum, /* toIndex= */ lastAvailableSegmentNum);
       this.representationHolder = representation;
     }
 

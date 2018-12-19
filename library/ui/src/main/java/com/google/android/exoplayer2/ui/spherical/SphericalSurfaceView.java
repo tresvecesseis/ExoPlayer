@@ -30,6 +30,7 @@ import android.support.annotation.AnyThread;
 import android.support.annotation.BinderThread;
 import android.support.annotation.Nullable;
 import android.support.annotation.UiThread;
+import android.support.annotation.VisibleForTesting;
 import android.util.AttributeSet;
 import android.view.Display;
 import android.view.Surface;
@@ -101,12 +102,18 @@ public final class SphericalSurfaceView extends GLSurfaceView {
     // Configure sensors and touch.
     sensorManager =
         (SensorManager) Assertions.checkNotNull(context.getSystemService(Context.SENSOR_SERVICE));
-    // TYPE_GAME_ROTATION_VECTOR is the easiest sensor since it handles all the complex math for
-    // fusion. It's used instead of TYPE_ROTATION_VECTOR since the latter uses the magnetometer on
-    // devices. When used indoors, the magnetometer can take some time to settle depending on the
-    // device and amount of metal in the environment.
-    int type = Util.SDK_INT >= 18 ? Sensor.TYPE_GAME_ROTATION_VECTOR : Sensor.TYPE_ROTATION_VECTOR;
-    orientationSensor = sensorManager.getDefaultSensor(type);
+    Sensor orientationSensor = null;
+    if (Util.SDK_INT >= 18) {
+      // TYPE_GAME_ROTATION_VECTOR is the easiest sensor since it handles all the complex math for
+      // fusion. It's used instead of TYPE_ROTATION_VECTOR since the latter uses the magnetometer on
+      // devices. When used indoors, the magnetometer can take some time to settle depending on the
+      // device and amount of metal in the environment.
+      orientationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR);
+    }
+    if (orientationSensor == null) {
+      orientationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+    }
+    this.orientationSensor = orientationSensor;
 
     scene = new SceneRenderer();
     renderer = new Renderer(scene);
@@ -230,7 +237,7 @@ public final class SphericalSurfaceView extends GLSurfaceView {
    * Standard GL Renderer implementation. The notable code is the matrix multiplication in
    * onDrawFrame and updatePitchMatrix.
    */
-  // @VisibleForTesting
+  @VisibleForTesting
   /* package */ class Renderer
       implements GLSurfaceView.Renderer, TouchTracker.Listener, OrientationListener.Listener {
     private final SceneRenderer scene;

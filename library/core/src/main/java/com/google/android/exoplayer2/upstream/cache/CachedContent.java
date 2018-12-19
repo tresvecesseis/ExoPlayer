@@ -23,10 +23,8 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.TreeSet;
 
-/**
- * Defines the cached content for a single stream.
- */
-/*package*/ final class CachedContent {
+/** Defines the cached content for a single stream. */
+/* package */ final class CachedContent {
 
   private static final int VERSION_METADATA_INTRODUCED = 2;
   private static final int VERSION_MAX = Integer.MAX_VALUE;
@@ -57,7 +55,7 @@ import java.util.TreeSet;
     if (version < VERSION_METADATA_INTRODUCED) {
       long length = input.readLong();
       ContentMetadataMutations mutations = new ContentMetadataMutations();
-      ContentMetadataInternal.setContentLength(mutations, length);
+      ContentMetadataMutations.setContentLength(mutations, length);
       cachedContent.applyMetadataMutations(mutations);
     } else {
       cachedContent.metadata = DefaultContentMetadata.readFromStream(input);
@@ -218,7 +216,7 @@ import java.util.TreeSet;
     int result = id;
     result = 31 * result + key.hashCode();
     if (version < VERSION_METADATA_INTRODUCED) {
-      long length = ContentMetadataInternal.getContentLength(metadata);
+      long length = ContentMetadata.getContentLength(metadata);
       result = 31 * result + (int) (length ^ (length >>> 32));
     } else {
       result = 31 * result + metadata.hashCode();

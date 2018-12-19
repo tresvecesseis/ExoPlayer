@@ -16,6 +16,9 @@
 package com.google.android.exoplayer2.demo;
 
 import android.app.Application;
+import com.google.android.exoplayer2.DefaultRenderersFactory;
+import com.google.android.exoplayer2.RenderersFactory;
+import com.google.android.exoplayer2.offline.DefaultDownloaderFactory;
 import com.google.android.exoplayer2.offline.DownloadManager;
 import com.google.android.exoplayer2.offline.DownloaderConstructorHelper;
 import com.google.android.exoplayer2.upstream.DataSource;
@@ -71,6 +74,17 @@ public class DemoApplication extends Application {
     return "withExtensions".equals(BuildConfig.FLAVOR);
   }
 
+  public RenderersFactory buildRenderersFactory(boolean preferExtensionRenderer) {
+    @DefaultRenderersFactory.ExtensionRendererMode
+    int extensionRendererMode =
+        useExtensionRenderers()
+            ? (preferExtensionRenderer
+                ? DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
+                : DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+            : DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF;
+    return new DefaultRenderersFactory(this, extensionRendererMode);
+  }
+
   public DownloadManager getDownloadManager() {
     initDownloadManager();
     return downloadManager;
@@ -87,10 +101,10 @@ public class DemoApplication extends Application {
           new DownloaderConstructorHelper(getDownloadCache(), buildHttpDataSourceFactory());
       downloadManager =
           new DownloadManager(
-              downloaderConstructorHelper,
+              new File(getDownloadDirectory(), DOWNLOAD_ACTION_FILE),
+              new DefaultDownloaderFactory(downloaderConstructorHelper),
               MAX_SIMULTANEOUS_DOWNLOADS,
-              DownloadManager.DEFAULT_MIN_RETRY_COUNT,
-              new File(getDownloadDirectory(), DOWNLOAD_ACTION_FILE));
+              DownloadManager.DEFAULT_MIN_RETRY_COUNT);
       downloadTracker =
           new DownloadTracker(
               /* context= */ this,

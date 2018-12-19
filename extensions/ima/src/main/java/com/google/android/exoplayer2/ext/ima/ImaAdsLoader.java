@@ -21,6 +21,7 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.support.annotation.IntDef;
 import android.support.annotation.Nullable;
+import android.support.annotation.VisibleForTesting;
 import android.view.ViewGroup;
 import com.google.ads.interactivemedia.v3.api.Ad;
 import com.google.ads.interactivemedia.v3.api.AdDisplayContainer;
@@ -40,6 +41,7 @@ import com.google.ads.interactivemedia.v3.api.AdsRequest;
 import com.google.ads.interactivemedia.v3.api.CompanionAdSlot;
 import com.google.ads.interactivemedia.v3.api.ImaSdkFactory;
 import com.google.ads.interactivemedia.v3.api.ImaSdkSettings;
+import com.google.ads.interactivemedia.v3.api.UiElement;
 import com.google.ads.interactivemedia.v3.api.player.ContentProgressProvider;
 import com.google.ads.interactivemedia.v3.api.player.VideoAdPlayer;
 import com.google.ads.interactivemedia.v3.api.player.VideoProgressUpdate;
@@ -67,8 +69,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Loads ads using the IMA SDK. All methods are called on the main thread. */
 public final class ImaAdsLoader
@@ -91,8 +95,11 @@ public final class ImaAdsLoader
 
     private @Nullable ImaSdkSettings imaSdkSettings;
     private @Nullable AdEventListener adEventListener;
+    private @Nullable Set<UiElement> adUiElements;
     private int vastLoadTimeoutMs;
     private int mediaLoadTimeoutMs;
+    private int mediaBitrate;
+    private boolean focusSkipButtonWhenAvailable;
     private ImaFactory imaFactory;
 
     /**
@@ -104,6 +111,8 @@ public final class ImaAdsLoader
       this.context = Assertions.checkNotNull(context);
       vastLoadTimeoutMs = TIMEOUT_UNSET;
       mediaLoadTimeoutMs = TIMEOUT_UNSET;
+      mediaBitrate = BITRATE_UNSET;
+      focusSkipButtonWhenAvailable = true;
       imaFactory = new DefaultImaFactory();
     }
 
@@ -134,6 +143,18 @@ public final class ImaAdsLoader
     }
 
     /**
+     * Sets the ad UI elements to be rendered by the IMA SDK.
+     *
+     * @param adUiElements The ad UI elements to be rendered by the IMA SDK.
+     * @return This builder, for convenience.
+     * @see AdsRenderingSettings#setUiElements(Set)
+     */
+    public Builder setAdUiElements(Set<UiElement> adUiElements) {
+      this.adUiElements = new HashSet<>(Assertions.checkNotNull(adUiElements));
+      return this;
+    }
+
+    /**
      * Sets the VAST load timeout, in milliseconds.
      *
      * @param vastLoadTimeoutMs The VAST load timeout, in milliseconds.
@@ -141,7 +162,7 @@ public final class ImaAdsLoader
      * @see AdsRequest#setVastLoadTimeout(float)
      */
     public Builder setVastLoadTimeoutMs(int vastLoadTimeoutMs) {
-      Assertions.checkArgument(vastLoadTimeoutMs >= 0);
+      Assertions.checkArgument(vastLoadTimeoutMs > 0);
       this.vastLoadTimeoutMs = vastLoadTimeoutMs;
       return this;
     }
@@ -154,12 +175,39 @@ public final class ImaAdsLoader
      * @see AdsRenderingSettings#setLoadVideoTimeout(int)
      */
     public Builder setMediaLoadTimeoutMs(int mediaLoadTimeoutMs) {
-      Assertions.checkArgument(mediaLoadTimeoutMs >= 0);
+      Assertions.checkArgument(mediaLoadTimeoutMs > 0);
       this.mediaLoadTimeoutMs = mediaLoadTimeoutMs;
       return this;
     }
 
-    // @VisibleForTesting
+    /**
+     * Sets the media maximum recommended bitrate for ads, in bps.
+     *
+     * @param bitrate The media maximum recommended bitrate for ads, in bps.
+     * @return This builder, for convenience.
+     * @see AdsRenderingSettings#setBitrateKbps(int)
+     */
+    public Builder setMaxMediaBitrate(int bitrate) {
+      Assertions.checkArgument(bitrate > 0);
+      this.mediaBitrate = bitrate;
+      return this;
+    }
+
+    /**
+     * Sets whether to focus the skip button (when available) on Android TV devices. The default
+     * setting is {@code true}.
+     *
+     * @param focusSkipButtonWhenAvailable Whether to focus the skip button (when available) on
+     *     Android TV devices.
+     * @return This builder, for convenience.
+     * @see AdsRenderingSettings#setFocusSkipButtonWhenAvailable(boolean)
+     */
+    public Builder setFocusSkipButtonWhenAvailable(boolean focusSkipButtonWhenAvailable) {
+      this.focusSkipButtonWhenAvailable = focusSkipButtonWhenAvailable;
+      return this;
+    }
+
+    @VisibleForTesting
     /* package */ Builder setImaFactory(ImaFactory imaFactory) {
       this.imaFactory = Assertions.checkNotNull(imaFactory);
       return this;
@@ -181,6 +229,9 @@ public final class ImaAdsLoader
           null,
           vastLoadTimeoutMs,
           mediaLoadTimeoutMs,
+          mediaBitrate,
+          focusSkipButtonWhenAvailable,
+          adUiElements,
           adEventListener,
           imaFactory);
     }
@@ -200,6 +251,9 @@ public final class ImaAdsLoader
           adsResponse,
           vastLoadTimeoutMs,
           mediaLoadTimeoutMs,
+          mediaBitrate,
+          focusSkipButtonWhenAvailable,
+          adUiElements,
           adEventListener,
           imaFactory);
     }
@@ -229,6 +283,7 @@ public final class ImaAdsLoader
   private static final long MAXIMUM_PRELOAD_DURATION_MS = 8000;
 
   private static final int TIMEOUT_UNSET = -1;
+  private static final int BITRATE_UNSET = -1;
 
   /** The state of ad playback. */
   @Documented
@@ -252,6 +307,9 @@ public final class ImaAdsLoader
   private final @Nullable String adsResponse;
   private final int vastLoadTimeoutMs;
   private final int mediaLoadTimeoutMs;
+  private final boolean focusSkipButtonWhenAvailable;
+  private final int mediaBitrate;
+  private final @Nullable Set<UiElement> adUiElements;
   private final @Nullable AdEventListener adEventListener;
   private final ImaFactory imaFactory;
   private final Timeline.Period period;
@@ -338,6 +396,9 @@ public final class ImaAdsLoader
         /* adsResponse= */ null,
         /* vastLoadTimeoutMs= */ TIMEOUT_UNSET,
         /* mediaLoadTimeoutMs= */ TIMEOUT_UNSET,
+        /* mediaBitrate= */ BITRATE_UNSET,
+        /* focusSkipButtonWhenAvailable= */ true,
+        /* adUiElements= */ null,
         /* adEventListener= */ null,
         /* imaFactory= */ new DefaultImaFactory());
   }
@@ -362,6 +423,9 @@ public final class ImaAdsLoader
         /* adsResponse= */ null,
         /* vastLoadTimeoutMs= */ TIMEOUT_UNSET,
         /* mediaLoadTimeoutMs= */ TIMEOUT_UNSET,
+        /* mediaBitrate= */ BITRATE_UNSET,
+        /* focusSkipButtonWhenAvailable= */ true,
+        /* adUiElements= */ null,
         /* adEventListener= */ null,
         /* imaFactory= */ new DefaultImaFactory());
   }
@@ -373,6 +437,9 @@ public final class ImaAdsLoader
       @Nullable String adsResponse,
       int vastLoadTimeoutMs,
       int mediaLoadTimeoutMs,
+      int mediaBitrate,
+      boolean focusSkipButtonWhenAvailable,
+      @Nullable Set<UiElement> adUiElements,
       @Nullable AdEventListener adEventListener,
       ImaFactory imaFactory) {
     Assertions.checkArgument(adTagUri != null || adsResponse != null);
@@ -380,6 +447,9 @@ public final class ImaAdsLoader
     this.adsResponse = adsResponse;
     this.vastLoadTimeoutMs = vastLoadTimeoutMs;
     this.mediaLoadTimeoutMs = mediaLoadTimeoutMs;
+    this.mediaBitrate = mediaBitrate;
+    this.focusSkipButtonWhenAvailable = focusSkipButtonWhenAvailable;
+    this.adUiElements = adUiElements;
     this.adEventListener = adEventListener;
     this.imaFactory = imaFactory;
     if (imaSdkSettings == null) {
@@ -643,7 +713,8 @@ public final class ImaAdsLoader
       // until MAXIMUM_PRELOAD_DURATION_MS before the ad so that an ad group load error delivered
       // just after an ad group isn't incorrectly attributed to the next ad group.
       int nextAdGroupIndex =
-          adPlaybackState.getAdGroupIndexAfterPositionUs(C.msToUs(contentPositionMs));
+          adPlaybackState.getAdGroupIndexAfterPositionUs(
+              C.msToUs(contentPositionMs), C.msToUs(contentDurationMs));
       if (nextAdGroupIndex != expectedAdGroupIndex && nextAdGroupIndex != C.INDEX_UNSET) {
         long nextAdGroupTimeMs = C.usToMs(adPlaybackState.adGroupTimesUs[nextAdGroupIndex]);
         if (nextAdGroupTimeMs == C.TIME_END_OF_SOURCE) {
@@ -925,6 +996,13 @@ public final class ImaAdsLoader
     adsRenderingSettings.setMimeTypes(supportedMimeTypes);
     if (mediaLoadTimeoutMs != TIMEOUT_UNSET) {
       adsRenderingSettings.setLoadVideoTimeout(mediaLoadTimeoutMs);
+    }
+    if (mediaBitrate != BITRATE_UNSET) {
+      adsRenderingSettings.setBitrateKbps(mediaBitrate / 1000);
+    }
+    adsRenderingSettings.setFocusSkipButtonWhenAvailable(focusSkipButtonWhenAvailable);
+    if (adUiElements != null) {
+      adsRenderingSettings.setUiElements(adUiElements);
     }
 
     // Set up the ad playback state, skipping ads based on the start position as required.
@@ -1269,7 +1347,7 @@ public final class ImaAdsLoader
   }
 
   /** Factory for objects provided by the IMA SDK. */
-  // @VisibleForTesting
+  @VisibleForTesting
   /* package */ interface ImaFactory {
     /** @see ImaSdkSettings */
     ImaSdkSettings createImaSdkSettings();

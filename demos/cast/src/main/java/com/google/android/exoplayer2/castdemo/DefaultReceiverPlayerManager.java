@@ -33,7 +33,7 @@ import com.google.android.exoplayer2.Timeline;
 import com.google.android.exoplayer2.Timeline.Period;
 import com.google.android.exoplayer2.ext.cast.CastPlayer;
 import com.google.android.exoplayer2.ext.cast.MediaItem;
-import com.google.android.exoplayer2.ext.cast.RemotePlayer;
+import com.google.android.exoplayer2.ext.cast.SessionAvailabilityListener;
 import com.google.android.exoplayer2.source.ConcatenatingMediaSource;
 import com.google.android.exoplayer2.source.ExtractorMediaSource;
 import com.google.android.exoplayer2.source.MediaSource;
@@ -52,7 +52,7 @@ import java.util.ArrayList;
 
 /** Manages players and an internal media queue for the ExoPlayer/Cast demo app. */
 /* package */ class DefaultReceiverPlayerManager
-    implements EventListener, RemotePlayer.SessionAvailabilityListener, PlayerManager {
+    implements EventListener, SessionAvailabilityListener, PlayerManager {
 
   private static final String USER_AGENT = "ExoCastDemoPlayer";
   private static final DefaultHttpDataSourceFactory DATA_SOURCE_FACTORY =
@@ -268,7 +268,7 @@ import java.util.ArrayList;
   public void onTimelineChanged(
       Timeline timeline, @Nullable Object manifest, @TimelineChangeReason int reason) {
     updateCurrentItemIndex();
-    if (timeline.isEmpty()) {
+    if (currentPlayer == castPlayer && timeline.isEmpty()) {
       castMediaQueueCreationPending = true;
     }
   }

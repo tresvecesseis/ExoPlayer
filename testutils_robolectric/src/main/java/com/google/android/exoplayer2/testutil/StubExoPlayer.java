@@ -50,6 +50,11 @@ public abstract class StubExoPlayer extends BasePlayer implements ExoPlayer {
   }
 
   @Override
+  public MetadataComponent getMetadataComponent() {
+    throw new UnsupportedOperationException();
+  }
+
+  @Override
   public Looper getPlaybackLooper() {
     throw new UnsupportedOperationException();
   }
@@ -265,6 +270,11 @@ public abstract class StubExoPlayer extends BasePlayer implements ExoPlayer {
 
   @Override
   public long getContentBufferedPosition() {
+    throw new UnsupportedOperationException();
+  }
+
+  @Override
+  public void setForegroundMode(boolean foregroundMode) {
     throw new UnsupportedOperationException();
   }
 }

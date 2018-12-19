@@ -172,6 +172,9 @@ public final class DefaultAudioSink implements AudioSink {
    */
   private static final int BUFFER_MULTIPLICATION_FACTOR = 4;
 
+  /** To avoid underruns on some devices (e.g., Broadcom 7271), scale up the AC3 buffer duration. */
+  private static final int AC3_BUFFER_MULTIPLICATION_FACTOR = 2;
+
   /**
    * @see AudioTrack#ERROR_BAD_VALUE
    */
@@ -351,8 +354,7 @@ public final class DefaultAudioSink implements AudioSink {
         channelMappingAudioProcessor,
         trimmingAudioProcessor);
     Collections.addAll(toIntPcmAudioProcessors, audioProcessorChain.getAudioProcessors());
-    toIntPcmAvailableAudioProcessors =
-        toIntPcmAudioProcessors.toArray(new AudioProcessor[toIntPcmAudioProcessors.size()]);
+    toIntPcmAvailableAudioProcessors = toIntPcmAudioProcessors.toArray(new AudioProcessor[0]);
     toFloatPcmAvailableAudioProcessors = new AudioProcessor[] {new FloatResamplingAudioProcessor()};
     volume = 1.0f;
     startMediaTimeState = START_NOT_SET;
@@ -374,14 +376,18 @@ public final class DefaultAudioSink implements AudioSink {
   }
 
   @Override
-  public boolean isEncodingSupported(@C.Encoding int encoding) {
+  public boolean supportsOutput(int channelCount, @C.Encoding int encoding) {
     if (Util.isEncodingLinearPcm(encoding)) {
       // AudioTrack supports 16-bit integer PCM output in all platform API versions, and float
       // output from platform API version 21 only. Other integer PCM encodings are resampled by this
-      // sink to 16-bit PCM.
+      // sink to 16-bit PCM. We assume that the audio framework will downsample any number of
+      // channels to the output device's required number of channels.
       return encoding != C.ENCODING_PCM_FLOAT || Util.SDK_INT >= 21;
     } else {
-      return audioCapabilities != null && audioCapabilities.supportsEncoding(encoding);
+      return audioCapabilities != null
+          && audioCapabilities.supportsEncoding(encoding)
+          && (channelCount == Format.NO_VALUE
+              || channelCount <= audioCapabilities.getMaxChannelCount());
     }
   }
 
@@ -412,7 +418,7 @@ public final class DefaultAudioSink implements AudioSink {
     isInputPcm = Util.isEncodingLinearPcm(inputEncoding);
     shouldConvertHighResIntPcmToFloat =
         enableConvertHighResIntPcmToFloat
-            && isEncodingSupported(C.ENCODING_PCM_32BIT)
+            && supportsOutput(channelCount, C.ENCODING_PCM_32BIT)
             && Util.isEncodingHighResolutionIntegerPcm(inputEncoding);
     if (isInputPcm) {
       pcmFrameSize = Util.getPcmFrameSize(inputEncoding, channelCount);
@@ -461,7 +467,7 @@ public final class DefaultAudioSink implements AudioSink {
       return;
     }
 
-    reset();
+    flush();
 
     this.processingEnabled = processingEnabled;
     outputSampleRate = sampleRate;
@@ -484,6 +490,9 @@ public final class DefaultAudioSink implements AudioSink {
       return Util.constrainValue(multipliedBufferSize, minAppBufferSize, maxAppBufferSize);
     } else {
       int rate = getMaximumEncodedRateBytesPerSecond(outputEncoding);
+      if (outputEncoding == C.ENCODING_AC3) {
+        rate *= AC3_BUFFER_MULTIPLICATION_FACTOR;
+      }
       return (int) (PASSTHROUGH_BUFFER_DURATION_US * rate / C.MICROS_PER_SECOND);
     }
   }
@@ -676,7 +685,7 @@ public final class DefaultAudioSink implements AudioSink {
 
     if (audioTrackPositionTracker.isStalled(getWrittenFrames())) {
       Log.w(TAG, "Resetting stalled audio track");
-      reset();
+      flush();
       return true;
     }
 
@@ -866,7 +875,7 @@ public final class DefaultAudioSink implements AudioSink {
       // The audio attributes are ignored in tunneling mode, so no need to reset.
       return;
     }
-    reset();
+    flush();
     audioSessionId = C.AUDIO_SESSION_ID_UNSET;
   }
 
@@ -874,7 +883,7 @@ public final class DefaultAudioSink implements AudioSink {
   public void setAudioSessionId(int audioSessionId) {
     if (this.audioSessionId != audioSessionId) {
       this.audioSessionId = audioSessionId;
-      reset();
+      flush();
     }
   }
 
@@ -902,7 +911,7 @@ public final class DefaultAudioSink implements AudioSink {
     if (!tunneling || audioSessionId != tunnelingAudioSessionId) {
       tunneling = true;
       audioSessionId = tunnelingAudioSessionId;
-      reset();
+      flush();
     }
   }
 
@@ -911,7 +920,7 @@ public final class DefaultAudioSink implements AudioSink {
     if (tunneling) {
       tunneling = false;
       audioSessionId = C.AUDIO_SESSION_ID_UNSET;
-      reset();
+      flush();
     }
   }
 
@@ -942,7 +951,7 @@ public final class DefaultAudioSink implements AudioSink {
   }
 
   @Override
-  public void reset() {
+  public void flush() {
     if (isInitialized()) {
       submittedPcmBytes = 0;
       submittedEncodedFrames = 0;
@@ -990,8 +999,8 @@ public final class DefaultAudioSink implements AudioSink {
   }
 
   @Override
-  public void release() {
-    reset();
+  public void reset() {
+    flush();
     releaseKeepSessionIdAudioTrack();
     for (AudioProcessor audioProcessor : toIntPcmAvailableAudioProcessors) {
       audioProcessor.reset();

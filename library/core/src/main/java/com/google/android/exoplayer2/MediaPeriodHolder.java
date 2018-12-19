@@ -20,6 +20,7 @@ import com.google.android.exoplayer2.source.ClippingMediaPeriod;
 import com.google.android.exoplayer2.source.EmptySampleStream;
 import com.google.android.exoplayer2.source.MediaPeriod;
 import com.google.android.exoplayer2.source.MediaSource;
+import com.google.android.exoplayer2.source.MediaSource.MediaPeriodId;
 import com.google.android.exoplayer2.source.SampleStream;
 import com.google.android.exoplayer2.source.TrackGroupArray;
 import com.google.android.exoplayer2.trackselection.TrackSelection;
@@ -88,16 +89,7 @@ import org.checkerframework.checker.nullness.compatqual.NullableType;
     this.info = info;
     sampleStreams = new SampleStream[rendererCapabilities.length];
     mayRetainStreamFlags = new boolean[rendererCapabilities.length];
-    MediaPeriod mediaPeriod = mediaSource.createPeriod(info.id, allocator);
-    if (info.id.endPositionUs != C.TIME_END_OF_SOURCE) {
-      mediaPeriod =
-          new ClippingMediaPeriod(
-              mediaPeriod,
-              /* enableInitialDiscontinuity= */ true,
-              /* startUs= */ 0,
-              info.id.endPositionUs);
-    }
-    this.mediaPeriod = mediaPeriod;
+    mediaPeriod = createMediaPeriod(info.id, mediaSource, allocator);
   }
 
   /**
@@ -133,23 +125,18 @@ import org.checkerframework.checker.nullness.compatqual.NullableType;
   }
 
   /**
-   * Returns the buffered position in microseconds. If the period is buffered to the end then
-   * {@link C#TIME_END_OF_SOURCE} is returned unless {@code convertEosToDuration} is true, in which
-   * case the period duration is returned.
+   * Returns the buffered position in microseconds. If the period is buffered to the end, then the
+   * period duration is returned.
    *
-   * @param convertEosToDuration Whether to return the period duration rather than
-   *     {@link C#TIME_END_OF_SOURCE} if the period is fully buffered.
    * @return The buffered position in microseconds.
    */
-  public long getBufferedPositionUs(boolean convertEosToDuration) {
+  public long getBufferedPositionUs() {
     if (!prepared) {
       return info.startPositionUs;
     }
     long bufferedPositionUs =
         hasEnabledTracks ? mediaPeriod.getBufferedPositionUs() : C.TIME_END_OF_SOURCE;
-    return bufferedPositionUs == C.TIME_END_OF_SOURCE && convertEosToDuration
-        ? info.durationUs
-        : bufferedPositionUs;
+    return bufferedPositionUs == C.TIME_END_OF_SOURCE ? info.durationUs : bufferedPositionUs;
   }
 
   /**
@@ -307,16 +294,7 @@ import org.checkerframework.checker.nullness.compatqual.NullableType;
   public void release() {
     disableTrackSelectionsInResult();
     trackSelectorResult = null;
-    try {
-      if (info.id.endPositionUs != C.TIME_END_OF_SOURCE) {
-        mediaSource.releasePeriod(((ClippingMediaPeriod) mediaPeriod).mediaPeriod);
-      } else {
-        mediaSource.releasePeriod(mediaPeriod);
-      }
-    } catch (RuntimeException e) {
-      // There's nothing we can do.
-      Log.e(TAG, "Period release failed.", e);
-    }
+    releaseMediaPeriod(info.id, mediaSource, mediaPeriod);
   }
 
   /**
@@ -417,5 +395,35 @@ import org.checkerframework.checker.nullness.compatqual.NullableType;
 
   private boolean isLoadingMediaPeriod() {
     return next == null;
+  }
+
+  /** Returns a media period corresponding to the given {@code id}. */
+  private static MediaPeriod createMediaPeriod(
+      MediaPeriodId id, MediaSource mediaSource, Allocator allocator) {
+    MediaPeriod mediaPeriod = mediaSource.createPeriod(id, allocator);
+    if (id.endPositionUs != C.TIME_UNSET && id.endPositionUs != C.TIME_END_OF_SOURCE) {
+      mediaPeriod =
+          new ClippingMediaPeriod(
+              mediaPeriod,
+              /* enableInitialDiscontinuity= */ true,
+              /* startUs= */ 0,
+              id.endPositionUs);
+    }
+    return mediaPeriod;
+  }
+
+  /** Releases the given {@code mediaPeriod}, logging and suppressing any errors. */
+  private static void releaseMediaPeriod(
+      MediaPeriodId id, MediaSource mediaSource, MediaPeriod mediaPeriod) {
+    try {
+      if (id.endPositionUs != C.TIME_UNSET && id.endPositionUs != C.TIME_END_OF_SOURCE) {
+        mediaSource.releasePeriod(((ClippingMediaPeriod) mediaPeriod).mediaPeriod);
+      } else {
+        mediaSource.releasePeriod(mediaPeriod);
+      }
+    } catch (RuntimeException e) {
+      // There's nothing we can do.
+      Log.e(TAG, "Period release failed.", e);
+    }
   }
 }

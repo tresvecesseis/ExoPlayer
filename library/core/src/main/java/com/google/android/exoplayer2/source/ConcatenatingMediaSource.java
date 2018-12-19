@@ -365,6 +365,9 @@ public class ConcatenatingMediaSource extends CompositeMediaSource<MediaSourceHo
   public final synchronized void moveMediaSource(
       int currentIndex, int newIndex, @Nullable Runnable actionOnCompletion) {
     if (currentIndex == newIndex) {
+      if (actionOnCompletion != null) {
+        actionOnCompletion.run();
+      }
       return;
     }
     mediaSourcesPublic.add(newIndex, mediaSourcesPublic.remove(currentIndex));
@@ -451,6 +454,12 @@ public class ConcatenatingMediaSource extends CompositeMediaSource<MediaSourceHo
   }
 
   @Override
+  @Nullable
+  public Object getTag() {
+    return null;
+  }
+
+  @Override
   public final synchronized void prepareSourceInternal(
       ExoPlayer player,
       boolean isTopLevelSource,
@@ -502,9 +511,7 @@ public class ConcatenatingMediaSource extends CompositeMediaSource<MediaSourceHo
         Assertions.checkNotNull(mediaSourceByMediaPeriod.remove(mediaPeriod));
     ((DeferredMediaPeriod) mediaPeriod).releasePeriod();
     holder.activeMediaPeriods.remove(mediaPeriod);
-    if (holder.activeMediaPeriods.isEmpty() && holder.isRemoved) {
-      releaseChildSource(holder);
-    }
+    maybeReleaseChildSource(holder);
   }
 
   @Override
@@ -572,9 +579,7 @@ public class ConcatenatingMediaSource extends CompositeMediaSource<MediaSourceHo
         if (fromIndex == 0 && toIndex == shuffleOrder.getLength()) {
           shuffleOrder = shuffleOrder.cloneAndClear();
         } else {
-          for (int index = toIndex - 1; index >= fromIndex; index--) {
-            shuffleOrder = shuffleOrder.cloneAndRemove(index);
-          }
+          shuffleOrder = shuffleOrder.cloneAndRemove(fromIndex, toIndex);
         }
         for (int index = toIndex - 1; index >= fromIndex; index--) {
           removeMediaSourceInternal(index);
@@ -583,7 +588,7 @@ public class ConcatenatingMediaSource extends CompositeMediaSource<MediaSourceHo
         break;
       case MSG_MOVE:
         MessageData<Integer> moveMessage = (MessageData<Integer>) Util.castNonNull(message);
-        shuffleOrder = shuffleOrder.cloneAndRemove(moveMessage.index);
+        shuffleOrder = shuffleOrder.cloneAndRemove(moveMessage.index, moveMessage.index + 1);
         shuffleOrder = shuffleOrder.cloneAndInsert(moveMessage.customData, 1);
         moveMediaSourceInternal(moveMessage.index, moveMessage.customData);
         scheduleListenerNotification(moveMessage.actionOnCompletion);
@@ -747,9 +752,7 @@ public class ConcatenatingMediaSource extends CompositeMediaSource<MediaSourceHo
         -oldTimeline.getWindowCount(),
         -oldTimeline.getPeriodCount());
     holder.isRemoved = true;
-    if (holder.activeMediaPeriods.isEmpty()) {
-      releaseChildSource(holder);
-    }
+    maybeReleaseChildSource(holder);
   }
 
   private void moveMediaSourceInternal(int currentIndex, int newIndex) {
@@ -778,6 +781,16 @@ public class ConcatenatingMediaSource extends CompositeMediaSource<MediaSourceHo
     }
   }
 
+  private void maybeReleaseChildSource(MediaSourceHolder mediaSourceHolder) {
+    // Release if the source has been removed from the playlist, but only if it has been previously
+    // prepared and only if we are not waiting for an existing media period to be released.
+    if (mediaSourceHolder.isRemoved
+        && mediaSourceHolder.hasStartedPreparing
+        && mediaSourceHolder.activeMediaPeriods.isEmpty()) {
+      releaseChildSource(mediaSourceHolder);
+    }
+  }
+
   /** Return uid of media source holder from period uid of concatenated source. */
   private static Object getMediaSourceHolderUid(Object periodUid) {
     return ConcatenatedTimeline.getChildTimelineUidFromConcatenatedUid(periodUid);
@@ -801,6 +814,7 @@ public class ConcatenatingMediaSource extends CompositeMediaSource<MediaSourceHo
 
     public final MediaSource mediaSource;
     public final Object uid;
+    public final List<DeferredMediaPeriod> activeMediaPeriods;
 
     public DeferredTimeline timeline;
     public int childIndex;
@@ -809,11 +823,10 @@ public class ConcatenatingMediaSource extends CompositeMediaSource<MediaSourceHo
     public boolean hasStartedPreparing;
     public boolean isPrepared;
     public boolean isRemoved;
-    public List<DeferredMediaPeriod> activeMediaPeriods;
 
     public MediaSourceHolder(MediaSource mediaSource) {
       this.mediaSource = mediaSource;
-      this.timeline = new DeferredTimeline();
+      this.timeline = DeferredTimeline.createWithDummyTimeline(mediaSource.getTag());
       this.activeMediaPeriods = new ArrayList<>();
       this.uid = new Object();
     }
@@ -938,9 +951,17 @@ public class ConcatenatingMediaSource extends CompositeMediaSource<MediaSourceHo
   private static final class DeferredTimeline extends ForwardingTimeline {
 
     private static final Object DUMMY_ID = new Object();
-    private static final DummyTimeline DUMMY_TIMELINE = new DummyTimeline();
 
     private final Object replacedId;
+
+    /**
+     * Returns an instance with a dummy timeline using the provided window tag.
+     *
+     * @param windowTag A window tag.
+     */
+    public static DeferredTimeline createWithDummyTimeline(@Nullable Object windowTag) {
+      return new DeferredTimeline(new DummyTimeline(windowTag), DUMMY_ID);
+    }
 
     /**
      * Returns an instance with a real timeline, replacing the provided period ID with the already
@@ -953,11 +974,6 @@ public class ConcatenatingMediaSource extends CompositeMediaSource<MediaSourceHo
     public static DeferredTimeline createWithRealTimeline(
         Timeline timeline, Object firstPeriodUid) {
       return new DeferredTimeline(timeline, firstPeriodUid);
-    }
-
-    /** Creates deferred timeline exposing a {@link DummyTimeline}. */
-    public DeferredTimeline() {
-      this(DUMMY_TIMELINE, DUMMY_ID);
     }
 
     private DeferredTimeline(Timeline timeline, Object replacedId) {
@@ -1003,6 +1019,12 @@ public class ConcatenatingMediaSource extends CompositeMediaSource<MediaSourceHo
   /** Dummy placeholder timeline with one dynamic window with a period of indeterminate duration. */
   private static final class DummyTimeline extends Timeline {
 
+    @Nullable private final Object tag;
+
+    public DummyTimeline(@Nullable Object tag) {
+      this.tag = tag;
+    }
+
     @Override
     public int getWindowCount() {
       return 1;
@@ -1012,7 +1034,7 @@ public class ConcatenatingMediaSource extends CompositeMediaSource<MediaSourceHo
     public Window getWindow(
         int windowIndex, Window window, boolean setTag, long defaultPositionProjectionUs) {
       return window.set(
-          /* tag= */ null,
+          tag,
           /* presentationStartTimeMs= */ C.TIME_UNSET,
           /* windowStartTimeMs= */ C.TIME_UNSET,
           /* isSeekable= */ false,
@@ -1060,6 +1082,12 @@ public class ConcatenatingMediaSource extends CompositeMediaSource<MediaSourceHo
         boolean isTopLevelSource,
         @Nullable TransferListener mediaTransferListener) {
       // Do nothing.
+    }
+
+    @Override
+    @Nullable
+    public Object getTag() {
+      return null;
     }
 
     @Override

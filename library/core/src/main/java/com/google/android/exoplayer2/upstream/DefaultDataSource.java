@@ -23,6 +23,7 @@ import com.google.android.exoplayer2.util.Log;
 import com.google.android.exoplayer2.util.Util;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -227,7 +228,8 @@ public final class DefaultDataSource implements DataSource {
     // Choose the correct source for the scheme.
     String scheme = dataSpec.uri.getScheme();
     if (Util.isLocalFileUri(dataSpec.uri)) {
-      if (dataSpec.uri.getPath().startsWith("/android_asset/")) {
+      String uriPath = dataSpec.uri.getPath();
+      if (uriPath != null && uriPath.startsWith("/android_asset/")) {
         dataSource = getAssetDataSource();
       } else {
         dataSource = getFileDataSource();
@@ -261,9 +263,7 @@ public final class DefaultDataSource implements DataSource {
 
   @Override
   public Map<String, List<String>> getResponseHeaders() {
-    return dataSource == null
-        ? DataSource.super.getResponseHeaders()
-        : dataSource.getResponseHeaders();
+    return dataSource == null ? Collections.emptyMap() : dataSource.getResponseHeaders();
   }
 
   @Override
