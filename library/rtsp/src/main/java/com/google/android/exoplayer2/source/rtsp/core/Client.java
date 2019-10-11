@@ -470,10 +470,7 @@ public abstract class Client implements Dispatcher.EventListener {
                                                     String scheme = uriBaseUrl.getScheme();
                                                     if (scheme != null &&
                                                             "rtsp".equalsIgnoreCase(scheme)) {
-                                                        if (!InetUtil.isPrivateIpAddress(
-                                                                uriBaseUrl.getHost())) {
-                                                            url = baseUrl;
-                                                        }
+                                                        url = baseUrl;
                                                     }
                                                 }
 
