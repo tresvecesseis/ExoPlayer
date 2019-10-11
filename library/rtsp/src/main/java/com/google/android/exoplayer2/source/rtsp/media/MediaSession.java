@@ -103,6 +103,8 @@ public final class MediaSession implements VideoListener {
     private final Map<Integer, RtspSampleStreamWrapper> interleavedListeners;
 
     private Uri uri;
+    // the base URI is potentially returned in the DESCRIBE response and is required to handle PLAY requests correctly
+    private Uri baseUri;
     private final String username;
     private final String password;
     private final Client client;
@@ -145,6 +147,10 @@ public final class MediaSession implements VideoListener {
 
     public void setUri(Uri uri) { this.uri = uri; }
 
+    public Uri baseUri() { return baseUri; }
+
+    public void setBaseUri(Uri baseUri) { this.baseUri = baseUri; }
+    
     public String username() { return username; }
 
     public String password() { return password; }
