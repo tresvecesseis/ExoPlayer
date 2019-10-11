@@ -132,7 +132,8 @@ public final class RtspDefaultClient extends Client {
 
     @Override
     public void sendPlayRequest(Range range) {
-        Request.Builder builder = new Request.Builder().play().url(session.uri().toString());
+        String url = getPlayUrl();
+        Request.Builder builder = new Request.Builder().play().url(url);
         builder.header(Header.CSeq, session.nextCSeq());
         builder.header(Header.UserAgent, USER_AGENT);
         builder.header(Header.Session, session.getId());
@@ -143,7 +144,8 @@ public final class RtspDefaultClient extends Client {
 
     @Override
     public void sendPlayRequest(Range range, float scale) {
-        Request.Builder builder = new Request.Builder().play().url(session.uri().toString());
+        String url = getPlayUrl();
+        Request.Builder builder = new Request.Builder().play().url(url);
         builder.header(Header.CSeq, session.nextCSeq());
         builder.header(Header.UserAgent, USER_AGENT);
         builder.header(Header.Session, session.getId());
@@ -191,5 +193,26 @@ public final class RtspDefaultClient extends Client {
         builder.header(Header.Session, session.getId());
 
         dispatch(builder.build());
+    }
+
+    private String getPlayUrl() {
+        // determine the URL to use for PLAY requests
+        Uri baseUri = session.baseUri();
+        if (baseUri != null)
+        {
+            // this was returned in the DESCRIBE response, use it!
+            return baseUri.toString();
+        }
+
+        // remove the user info from the URL if it is present
+        String url = session.uri().toString();
+        String uriUserInfo = session.uri().getUserInfo();
+        if (uriUserInfo != null && !uriUserInfo.isEmpty())
+        {
+            // strip the user info
+            uriUserInfo += "@";
+            url = url.replace(uriUserInfo, "");
+        }
+        return url;
     }
 }
