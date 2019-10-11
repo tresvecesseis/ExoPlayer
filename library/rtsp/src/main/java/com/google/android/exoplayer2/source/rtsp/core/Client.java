@@ -375,6 +375,11 @@ public abstract class Client implements Dispatcher.EventListener {
         } else if (headers.contains(Header.ContentLocation)) {
             baseUrl = headers.value(Header.ContentLocation);
         }
+        
+        if (baseUrl != null)
+        {
+            session.setBaseUri(Uri.parse(baseUrl));
+        }
 
         if (body != null) {
             MediaType mediaType = body.getContentType();
