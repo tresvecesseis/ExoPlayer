@@ -291,6 +291,27 @@ public abstract class Client implements Dispatcher.EventListener {
         }
     }
 
+    protected String getPlayUrl() {
+        // determine the URL to use for PLAY requests
+        Uri baseUri = session.baseUri();
+        if (baseUri != null)
+        {
+            // this was returned in the DESCRIBE response, use it!
+            return baseUri.toString();
+        }
+
+        // remove the user info from the URL if it is present
+        String url = session.uri().toString();
+        String uriUserInfo = session.uri().getUserInfo();
+        if (uriUserInfo != null && !uriUserInfo.isEmpty())
+        {
+            // strip the user info
+            uriUserInfo += "@";
+            url = url.replace(uriUserInfo, "");
+        }
+        return url;
+    }
+
     // Dispatcher.EventListener implementation
     @Override
     public final void onAnnounceRequest(Request request) {
