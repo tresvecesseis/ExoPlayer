@@ -348,6 +348,9 @@ import static com.google.android.exoplayer2.source.rtsp.message.Protocol.RTSP_1_
                         Request request = outstanding.remove(cSeq);
                         requestMonitor.cancel(request);
 
+                        // clear header value lists to reuse the request object
+                        request.getHeaders().clear();
+
                         if (response.getStatus().equals(Status.Unauthorized)) {
                             listener.onUnauthorized(request, response);
 
