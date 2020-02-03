@@ -80,7 +80,7 @@ import java.util.List;
     private String formatId;
 
     public RtpH264PayloadReader(RtpVideoPayload payloadFormat) {
-        this(payloadFormat, true, true);
+        this(payloadFormat, false, true);
     }
 
     public RtpH264PayloadReader(RtpVideoPayload payloadFormat,
@@ -196,9 +196,8 @@ import java.util.List;
 
         //Log.v("RtpH264PayloadReader", "[Single] NAL unit type=[" + nalUnitType + "]");
 
-        if (nalUnitType == NAL_UNIT_TYPE_IDR || nalUnitType == NAL_UNIT_TYPE_NON_IDR) {
-            sampleIsKeyframe = true;
-        }
+        sampleIsKeyframe = (nalUnitType == NAL_UNIT_TYPE_IDR
+                || (allowNonIdrKeyframes && nalUnitType == NAL_UNIT_TYPE_NON_IDR));
 
         if (hasOutputFormat) {
             nalStartCode.setPosition(0);
@@ -300,7 +299,8 @@ import java.util.List;
 
                 if (hasOutputFormat) {
                     sampleLength += data.length;
-                    sampleIsKeyframe = true;
+                    sampleIsKeyframe = (nalUnitType == NAL_UNIT_TYPE_IDR
+                            || (allowNonIdrKeyframes && nalUnitType == NAL_UNIT_TYPE_NON_IDR));
 
                     output.sampleData(new ParsableByteArray(data), data.length);
 
