@@ -61,7 +61,7 @@ public final class RtpVideoPayload extends RtpPayloadFormat {
 
     @Override
     public void buildCodecProfileLevel() {
-        if (MimeTypes.VIDEO_H264.equals(sampleMimeType)) {
+        if (MimeTypes.VIDEO_H264.equals(sampleMimeType) || MimeTypes.VIDEO_H265.equals(sampleMimeType)) {
             if (parameters.contains(FormatSpecificParameter.PROFILE_LEVEL_ID)) {
                 //  42:  Baseline
                 //  4d:  Main
