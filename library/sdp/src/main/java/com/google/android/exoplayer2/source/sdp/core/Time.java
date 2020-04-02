@@ -49,13 +49,13 @@ public class Time {
 
     private static long getSecondsFromTypedTime(String typedTime) {
         if (typedTime.endsWith("d")) {
-            return Integer.parseInt(typedTime.replace('d', ' ').trim()) * 86400;
+            return Long.parseLong(typedTime.replace('d', ' ').trim()) * 86400;
         } else if (typedTime.endsWith("h")) {
-            return Integer.parseInt(typedTime.replace('h', ' ').trim()) * 3600;
+            return Long.parseLong(typedTime.replace('h', ' ').trim()) * 3600;
         } else if (typedTime.endsWith("m")) {
-            return Integer.parseInt(typedTime.replace('m', ' ').trim()) * 60;
+            return Long.parseLong(typedTime.replace('m', ' ').trim()) * 60;
         } else {
-            return Integer.parseInt(typedTime.replace('s', ' ').trim());
+            return Long.parseLong(typedTime.replace('s', ' ').trim());
         }
     }
 
