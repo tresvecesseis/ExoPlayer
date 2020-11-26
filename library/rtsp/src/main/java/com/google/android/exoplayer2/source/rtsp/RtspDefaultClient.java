@@ -219,7 +219,7 @@ public final class RtspDefaultClient extends Client {
 
     @Override
     protected void sendGetParameterRequest() {
-        Request.Builder builder = new Request.Builder().get_parameter().url(session.uri().toString());
+        Request.Builder builder = new Request.Builder().get_parameter().url(session.getBaseUri().toString());
         builder.header(Header.CSeq, session.nextCSeq());
         builder.header(Header.UserAgent, USER_AGENT);
         builder.header(Header.Session, session.getId());
