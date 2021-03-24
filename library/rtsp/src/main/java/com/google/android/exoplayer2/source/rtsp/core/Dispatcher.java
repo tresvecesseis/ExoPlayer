@@ -366,7 +366,8 @@ import static com.google.android.exoplayer2.source.rtsp.message.Protocol.RTSP_1_
                     } else {
 
                         Response.Builder builder = new Response.Builder().status(Status.BadRequest);
-                        builder.header(Header.UserAgent, userAgent);
+                        builder.header(Header.UserAgent, userAgent == null ?
+                                "": userAgent);
 
                         execute(builder.build());
                     }

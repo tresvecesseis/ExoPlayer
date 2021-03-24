@@ -879,7 +879,7 @@ public abstract class Client implements Dispatcher.EventListener {
         return false;
     }
 
-    protected final String getPlayUrl() {
+    protected final String getDescribeUrl() {
         // determine the URL to use for PLAY requests
         Uri baseUri = session.getBaseUri();
         if (baseUri != null) {
