@@ -43,6 +43,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import javax.net.SocketFactory;
+import javax.net.ssl.SSLSocketFactory;
 
 import static com.google.android.exoplayer2.source.rtsp.message.Protocol.RTSP_1_0;
 
@@ -118,7 +119,11 @@ import static com.google.android.exoplayer2.source.rtsp.message.Protocol.RTSP_1_
 
     public void connect() throws IOException {
         if (!opened) {
-            socket = SocketFactory.getDefault().createSocket();
+            if ("rtsps".equals(uri.getScheme())) {
+                socket = SSLSocketFactory.getDefault().createSocket();
+            } else {
+                socket = SocketFactory.getDefault().createSocket();
+            }
 
             address = InetAddress.getByName(uri.getHost());
 
@@ -418,7 +423,7 @@ import static com.google.android.exoplayer2.source.rtsp.message.Protocol.RTSP_1_
      * Monitor the request/reply message.
      */
     /* package */ final class RequestMonitor {
-        private static final long DEFAULT_TIMEOUT_REQUEST = 10000;
+        private static final long DEFAULT_TIMEOUT_REQUEST = 20000;
 
         private final ExecutorService executorService = Executors.newSingleThreadExecutor();
         private final Map<Integer, Future<?>> tasks;

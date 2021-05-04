@@ -94,7 +94,7 @@ public final class Request extends Message {
         public Builder url(String url) {
             if (url == null) throw new NullPointerException("url is null");
 
-            if (url.regionMatches(true, 0, "rtsp:", 0, 5) || url.equals("*")) {
+            if (url.regionMatches(true, 0, "rtsp:", 0, 5) || url.regionMatches(true, 0, "rtsps:", 0, 6) || url.equals("*")) {
                 this.url = url;
             } else {
                 if (url.contains("://")) {
