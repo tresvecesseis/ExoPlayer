@@ -234,7 +234,7 @@ public final class RtspDefaultClient extends Client {
 
     @Override
     public void sendTeardownRequest() {
-        Request.Builder builder = new Request.Builder().teardown().url(session.uri().toString());
+        Request.Builder builder = new Request.Builder().teardown().url(getDescribeUrl());
         builder.header(Header.CSeq, session.nextCSeq());
         builder.header(Header.UserAgent, USER_AGENT);
         builder.header(Header.Session, session.getId());

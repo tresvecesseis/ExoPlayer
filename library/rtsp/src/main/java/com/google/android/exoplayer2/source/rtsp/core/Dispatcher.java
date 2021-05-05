@@ -139,6 +139,8 @@ import static com.google.android.exoplayer2.source.rtsp.message.Protocol.RTSP_1_
             opened = false;
 
             sender.cancel();
+            sender.awaitTermination();
+
             receiver.cancel();
             requestMonitor.stop();
 

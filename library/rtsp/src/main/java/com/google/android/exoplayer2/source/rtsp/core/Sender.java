@@ -25,9 +25,12 @@ import java.io.OutputStream;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 
 
 /* package */ final class Sender {
+
+    private static final String TAG = "Sender";
 
     public interface EventListener {
         void onSendSuccess(Message message);
@@ -46,6 +49,15 @@ import java.util.concurrent.RejectedExecutionException;
     public Sender(OutputStream outputStream, EventListener eventListener) {
         this.outputStream = outputStream;
         this.eventListener = eventListener;
+    }
+
+    public void awaitTermination()
+    {
+        try {
+            executorService.awaitTermination(5, TimeUnit.SECONDS);
+        }
+        catch (Exception ignored)
+        {}
     }
 
     public void cancel() {
@@ -92,26 +104,24 @@ import java.util.concurrent.RejectedExecutionException;
                 executorService.execute(new Runnable() {
                     @Override
                     public void run() {
-
                         try {
-
                             if (message != null) {
-                                Log.v("Sender", message.toString());
+                                Log.v(TAG, message.toString());
                                 byte[] bytes = message.toString().getBytes();
                                 outputStream.write(bytes, 0, bytes.length);
 
                                 eventListener.onSendSuccess(message);
                             }
-
                         } catch (IOException ex) {
+                            Log.e(TAG, "Excption caught when sending message: " + ex.getMessage());
                             if (!canceled) {
                                 eventListener.onSendFailure(message);
                             }
                         }
                     }
                 });
-
-            } catch (RejectedExecutionException ex) {
+            } catch (Exception ex) {
+                Log.e(TAG, "Excption caught when queuing message: " + ex.getMessage());
             }
         }
     }
